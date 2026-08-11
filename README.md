@@ -1,4 +1,4 @@
-# create-launch
+# thrust
 
 CLI that scaffolds full-stack projects so hackathon teams can skip
 frontend/backend wiring and jump straight to features.
