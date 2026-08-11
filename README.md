@@ -1,10 +1,11 @@
 # create-launch
 
-CLI that scaffolds full-stack projects so hackathon teams can skip frontend/backend wiring and jump straight to features.
+CLI that scaffolds full-stack projects so hackathon teams can skip
+frontend/backend wiring and jump straight to features.
 
-```bash
-npm create launch my-app
-```
+> **Not published to npm yet.** `npm create launch` will not work until this
+> package is published. Until then, run it from source — see
+> [Running the CLI](#running-the-cli) below.
 
 ## What you get
 
@@ -12,77 +13,160 @@ A ready-to-run project with:
 
 - **Frontend**: React + TypeScript + Vite + Tailwind CSS
 - **Backend**: your choice of Express, FastAPI, or Spring Boot
-- **Glue already wired**: CORS configured, `/api/health` endpoint, frontend fetching from backend, `.env` files with consistent variable naming
-- **One command** (`npm run dev`) starts both frontend and backend
+- **Glue already wired**: CORS configured, a `GET /api/health` endpoint, the
+  frontend fetching it on load, and `.env` files with matching variable names
+- **One command** (`npm run dev`) starts frontend and backend together
 
-## Usage
+## Running the CLI
 
-### Interactive
-
-```bash
-npm create launch
-```
-
-Prompts for project name and backend stack.
-
-### Non-interactive
+### First-time setup
 
 ```bash
-npm create launch my-app -- --stack=typescript
+cd thrust
+npm install      # installs the CLI's own dependencies
+npm run build    # compiles src/ to dist/ — required before every run
 ```
 
-| Stack        | Backend     | Extra prerequisite |
-| ------------ | ----------- | ------------------ |
-| `typescript` | Express     | —                  |
-| `python`     | FastAPI     | Python 3.9+        |
-| `springboot` | Spring Boot | JDK 17+            |
+`npm run build` must be re-run after any change to `src/`.
 
-All three ship the same React + TypeScript + Vite + Tailwind frontend, expose
-the same `GET /api/health` endpoint, use the same environment variable names,
-and start with the same `npm run dev`.
+### Generate a project
+
+```bash
+# Interactive — prompts for project name, then backend stack
+node dist/index.js
+
+# Name given, stack prompted
+node dist/index.js my-app
+
+# Fully non-interactive
+node dist/index.js my-app --stack=typescript
+```
+
+The project is created in a new folder under your **current working directory**,
+so `cd` to wherever you want it first.
 
 ### Options
 
-| Flag             | Description                      |
-| ---------------- | -------------------------------- |
-| `--stack <name>` | Backend stack (skips prompt)      |
-| `--no-install`   | Skip dependency installation     |
+| Flag             | Description                                             |
+| ---------------- | ------------------------------------------------------- |
+| `--stack <name>` | `typescript`, `python`, or `springboot`. Skips the prompt |
+| `--no-install`   | Skip dependency installation                            |
+| `-h, --help`     | Show help                                               |
+
+Without `--no-install`, the CLI installs dependencies for you: it asks first in
+interactive mode, and does it automatically when both a name and `--stack` are
+given.
+
+## Running a generated project
+
+The commands are the same for all three stacks.
+
+**If you let the CLI install dependencies**, only one command is left:
+
+```bash
+cd my-app
+npm run dev
+```
+
+**If you passed `--no-install`**, run both install steps first:
+
+```bash
+cd my-app
+npm install          # root dependencies (concurrently)
+npm run install:all  # backend + client dependencies
+npm run dev
+```
+
+Both steps are needed — `npm install` at the root only installs the task runner,
+while `npm run install:all` installs the actual backend and frontend packages.
+
+Once running:
+
+| Service  | URL                                              |
+| -------- | ------------------------------------------------ |
+| Frontend | [http://localhost:5173](http://localhost:5173)   |
+| Backend  | [http://localhost:3001](http://localhost:3001)   |
+| Health   | `http://localhost:3001/api/health` → `{"status":"ok"}` |
+
+The page shows a green dot and `API: ok` when the frontend reaches the backend.
+
+## Stacks
+
+| Stack        | Backend     | Needs beyond Node.js 18+ |
+| ------------ | ----------- | ------------------------ |
+| `typescript` | Express     | —                        |
+| `python`     | FastAPI     | Python 3.9+              |
+| `springboot` | Spring Boot | JDK 17+                  |
+
+All three ship the identical React + Vite + Tailwind frontend, expose the same
+`GET /api/health`, use the same environment variable names, and start with the
+same `npm run dev`.
+
+Stack-specific notes:
+
+- **python** — `npm run install:all` creates a local `.venv/` and installs
+  `requirements.txt` into it. No global pip installs, no manual activation.
+- **springboot** — the Maven Wrapper (`server/mvnw`) is included, so Maven does
+  **not** need to be installed; it is downloaded on first run. The first
+  `npm run dev` is slow while Maven fetches the Spring dependency tree.
 
 ## Generated project structure
 
 ```
 my-app/
-├── client/          React + Vite + Tailwind
+├── client/          React + Vite + Tailwind (identical in every stack)
 │   ├── src/
-│   │   └── App.tsx  Fetches /api/health and displays status
+│   │   └── App.tsx  Fetches /api/health and displays the status
 │   └── .env         VITE_API_URL=http://localhost:3001
-├── server/          Backend (Express / FastAPI / Spring Boot)
-│   ├── src/
+├── server/          Express / FastAPI / Spring Boot
 │   └── .env         SERVER_PORT=3001, CLIENT_ORIGIN=http://localhost:5173
-├── .env.example     Reference for all env vars
+├── .env.example     Reference for every environment variable
 ├── .gitignore
-├── package.json     Root scripts: dev, build, install:all
-└── README.md        Setup steps for the generated project
+├── package.json     Root scripts: dev, install:all, build
+└── README.md        Setup steps for that specific stack
 ```
 
-## Development
+## Environment variables
+
+Identical names across all three templates:
+
+| Variable        | Where    | Default                 | Purpose             |
+| --------------- | -------- | ----------------------- | ------------------- |
+| `SERVER_PORT`   | `server` | `3001`                  | Backend port        |
+| `CLIENT_ORIGIN` | `server` | `http://localhost:5173` | Allowed CORS origin |
+| `VITE_API_URL`  | `client` | `http://localhost:3001` | Backend URL         |
+
+Working `.env` files are generated with these defaults, so a fresh project runs
+without editing anything.
+
+## Repository layout
+
+```
+thrust/
+├── src/index.ts     CLI source (the only place to edit)
+├── dist/            Compiled output — generated, and the npm bin entry point
+└── templates/
+    ├── typescript/  Express
+    ├── python/      FastAPI
+    └── springboot/  Spring Boot
+```
+
+Notes for contributors:
+
+- The CLI only offers stacks whose directory exists under `templates/`, so a
+  half-finished template will not appear in the picker.
+- Template files are copied verbatim, then `__PROJECT_NAME__` is replaced
+  throughout with the project name.
+- npm strips dotfiles from published tarballs, so templates store them with a
+  leading underscore (`_env`, `_gitignore`, `_mvn`) and the CLI restores the
+  real names while copying. Add new dotfiles the same way, or they will be
+  missing for anyone who installs from npm.
+
+Check what would actually ship before publishing:
 
 ```bash
-git clone <repo-url>
-cd thrust
-npm install
-npm run build
+npm pack --dry-run
 ```
-
-Test the CLI locally:
-
-```bash
-node dist/index.js                                    # interactive
-node dist/index.js my-app --stack=typescript          # non-interactive
-```
-
-The CLI only offers stacks whose template directory exists under `templates/`,
-so a stack that hasn't been built yet won't appear in the picker.
 
 ## License
 

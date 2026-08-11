@@ -121,10 +121,11 @@ async function scaffold(projectName: string, stack: Stack): Promise<void> {
   spinner.stop(`Template copied to ${projectName}/`);
 }
 
+/** Returns true only if every install command succeeded. */
 async function runInstall(
   projectName: string,
   stack: Stack
-): Promise<void> {
+): Promise<boolean> {
   const destDir = path.resolve(process.cwd(), projectName);
   const spinner = p.spinner();
   spinner.start("Installing dependencies...");
@@ -133,21 +134,23 @@ async function runInstall(
       await execaCommand(cmd, { cwd: destDir });
     }
     spinner.stop("Dependencies installed.");
+    return true;
   } catch {
-    spinner.stop("Failed to install dependencies. Run install manually.");
+    spinner.stop("Could not install dependencies — run the steps below by hand.");
+    return false;
   }
 }
 
-function printNextSteps(projectName: string, stack: Stack): void {
-  const installHint = INSTALL_COMMANDS[stack].join(" && ");
-  p.note(
-    [
-      `cd ${projectName}`,
-      `${installHint}  (if you skipped it)`,
-      DEV_COMMANDS[stack],
-    ].join("\n"),
-    "Next steps"
-  );
+function printNextSteps(
+  projectName: string,
+  stack: Stack,
+  alreadyInstalled: boolean
+): void {
+  const steps = [`cd ${projectName}`];
+  if (!alreadyInstalled) steps.push(INSTALL_COMMANDS[stack].join(" && "));
+  steps.push(DEV_COMMANDS[stack]);
+
+  p.note(steps.join("\n"), "Next steps");
 }
 
 async function promptProjectName(): Promise<string> {
@@ -236,6 +239,8 @@ async function main(): Promise<void> {
 
   await scaffold(projectName, stack);
 
+  let installed = false;
+
   if (shouldInstall) {
     const doInstall = isNonInteractive
       ? true
@@ -245,11 +250,11 @@ async function main(): Promise<void> {
       process.exit(0);
     }
     if (doInstall) {
-      await runInstall(projectName, stack);
+      installed = await runInstall(projectName, stack);
     }
   }
 
-  printNextSteps(projectName, stack);
+  printNextSteps(projectName, stack, installed);
   p.outro("Happy hacking!");
 }
 
