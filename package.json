@@ -1,0 +1,38 @@
+{
+  "name": "create-launch",
+  "version": "0.1.0",
+  "description": "Full-stack project scaffolding CLI for hackathon teams",
+  "type": "module",
+  "bin": {
+    "create-launch": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch"
+  },
+  "files": [
+    "dist",
+    "templates"
+  ],
+  "keywords": [
+    "create",
+    "scaffold",
+    "hackathon",
+    "fullstack",
+    "react",
+    "vite",
+    "express",
+    "fastapi",
+    "springboot"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@clack/prompts": "^0.9.1",
+    "commander": "^13.1.0",
+    "execa": "^9.5.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "typescript": "^5.8.3"
+  }
+}
