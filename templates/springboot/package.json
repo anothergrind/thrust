@@ -1,0 +1,15 @@
+{
+  "name": "__PROJECT_NAME__",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently -n server,client -c blue,green \"npm run dev:server\" \"npm run dev:client\"",
+    "dev:server": "node scripts/mvn.mjs spring-boot:run",
+    "dev:client": "npm run dev --prefix client",
+    "install:all": "node scripts/mvn.mjs -q dependency:go-offline && npm install --prefix client",
+    "build": "npm run build --prefix client && node scripts/mvn.mjs package -DskipTests"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}

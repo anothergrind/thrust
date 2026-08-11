@@ -1,0 +1,6 @@
+# Server
+SERVER_PORT=3001
+CLIENT_ORIGIN=http://localhost:5173
+
+# Client (Vite requires the VITE_ prefix to expose a variable to the browser)
+VITE_API_URL=http://localhost:3001

@@ -31,11 +31,15 @@ Prompts for project name and backend stack.
 npm create launch my-app -- --stack=typescript
 ```
 
-| Stack          | Backend        | Status      |
-| -------------- | -------------- | ----------- |
-| `typescript`   | Express        | Ready       |
-| `python`       | FastAPI        | Not yet     |
-| `springboot`   | Spring Boot    | Not yet     |
+| Stack        | Backend     | Extra prerequisite |
+| ------------ | ----------- | ------------------ |
+| `typescript` | Express     | —                  |
+| `python`     | FastAPI     | Python 3.9+        |
+| `springboot` | Spring Boot | JDK 17+            |
+
+All three ship the same React + TypeScript + Vite + Tailwind frontend, expose
+the same `GET /api/health` endpoint, use the same environment variable names,
+and start with the same `npm run dev`.
 
 ### Options
 
@@ -54,7 +58,7 @@ my-app/
 │   └── .env         VITE_API_URL=http://localhost:3001
 ├── server/          Backend (Express / FastAPI / Spring Boot)
 │   ├── src/
-│   └── .env         SERVER_PORT=3001
+│   └── .env         SERVER_PORT=3001, CLIENT_ORIGIN=http://localhost:5173
 ├── .env.example     Reference for all env vars
 ├── .gitignore
 ├── package.json     Root scripts: dev, build, install:all

@@ -20,8 +20,8 @@ const STACK_LABELS: Record<Stack, string> = {
 
 const INSTALL_COMMANDS: Record<Stack, string[]> = {
   typescript: ["npm install", "npm run install:all"],
-  python: ["npm install"],
-  springboot: ["npm install"],
+  python: ["npm install", "npm run install:all"],
+  springboot: ["npm install", "npm run install:all"],
 };
 
 const DEV_COMMANDS: Record<Stack, string> = {
@@ -44,10 +44,15 @@ function isTextFile(filename: string): boolean {
   return TEXT_EXTENSIONS.has(ext);
 }
 
+/**
+ * npm strips dotfiles from published tarballs, so templates store them with a
+ * leading underscore and we restore the real name on copy.
+ */
 function renameDotfile(name: string): string {
   if (name === "_gitignore") return ".gitignore";
   if (name === "_env") return ".env";
   if (name === "_env.example") return ".env.example";
+  if (name === "_mvn") return ".mvn";
   return name;
 }
 
