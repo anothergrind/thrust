@@ -40,22 +40,52 @@ node dist/index.js my-app
 
 # Fully non-interactive
 node dist/index.js my-app --stack=typescript
+
+# Somewhere other than the current directory
+node dist/index.js ../my-app --stack=typescript
+node dist/index.js ~/code/my-app --stack=typescript
+node dist/index.js C:/Users/me/code/my-app --stack=typescript
 ```
 
-The project is created in a new folder under your **current working directory**,
-so `cd` to wherever you want it first.
+A bare name is created under your **current working directory**. Anywhere else,
+pass a path — relative, absolute, or `~`-prefixed. Missing parent folders are
+created for you, so `code/2026/my-app` works even if none of it exists yet.
+
+Only the final folder name becomes the project name, so `../my-app` still
+produces a project called `my-app`.
+
+The interactive prompt accepts all the same forms — it asks for a "project name
+or path", so you can type `~/code/my-app` there rather than `cd`-ing first.
 
 ### Options
 
-| Flag             | Description                                             |
-| ---------------- | ------------------------------------------------------- |
+| Flag             | Description                                              |
+| ---------------- | -------------------------------------------------------- |
 | `--stack <name>` | `typescript`, `python`, or `springboot`. Skips the prompt |
-| `--no-install`   | Skip dependency installation                            |
-| `-h, --help`     | Show help                                               |
+| `--no-install`   | Skip dependency installation                             |
+| `--no-git`       | Skip git repository initialization                       |
+| `--github`       | Create a GitHub repository and push (requires `gh`)      |
+| `--public`       | Make the created GitHub repository public                |
+| `-h, --help`     | Show help                                                |
 
 Without `--no-install`, the CLI installs dependencies for you: it asks first in
 interactive mode, and does it automatically when both a name and `--stack` are
 given.
+
+### Git and GitHub
+
+Every generated project becomes its own git repository with one initial commit,
+unless you pass `--no-git`.
+
+If you scaffold into a folder that already sits inside another git repository,
+the CLI warns you first — the new project would otherwise show up as untracked
+files in the parent repo. Interactive runs ask before continuing.
+
+To also create the remote, pass `--github` (or answer yes to the prompt in
+interactive mode). This shells out to the [GitHub CLI](https://cli.github.com),
+so `gh` must be installed and `gh auth login` already done. Repositories are
+created **private** unless you pass `--public`. Without `gh`, the CLI prints the
+`git remote add` / `git push` steps instead.
 
 ## Running a generated project
 
