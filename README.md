@@ -11,7 +11,7 @@ frontend/backend wiring and jump straight to features.
 
 A ready-to-run project with:
 
-- **Frontend**: React + TypeScript + Vite + Tailwind CSS
+- **Frontend**: Next.js + React + TypeScript + Tailwind CSS
 - **Backend**: your choice of Express, FastAPI, or Spring Boot
 - **Glue already wired**: CORS configured, a `GET /api/health` endpoint, the
   frontend fetching it on load, and `.env` files with matching variable names
@@ -84,7 +84,7 @@ Once running:
 
 | Service  | URL                                              |
 | -------- | ------------------------------------------------ |
-| Frontend | [http://localhost:5173](http://localhost:5173)   |
+| Frontend | [http://localhost:3000](http://localhost:3000)   |
 | Backend  | [http://localhost:3001](http://localhost:3001)   |
 | Health   | `http://localhost:3001/api/health` → `{"status":"ok"}` |
 
@@ -98,7 +98,7 @@ The page shows a green dot and `API: ok` when the frontend reaches the backend.
 | `python`     | FastAPI     | Python 3.9+              |
 | `springboot` | Spring Boot | JDK 17+                  |
 
-All three ship the identical React + Vite + Tailwind frontend, expose the same
+All three ship the identical Next.js + React + Tailwind frontend, expose the same
 `GET /api/health`, use the same environment variable names, and start with the
 same `npm run dev`.
 
@@ -114,12 +114,14 @@ Stack-specific notes:
 
 ```
 my-app/
-├── client/          React + Vite + Tailwind (identical in every stack)
-│   ├── src/
-│   │   └── App.tsx  Fetches /api/health and displays the status
-│   └── .env         VITE_API_URL=http://localhost:3001
+├── client/          Next.js App Router (identical in every stack)
+│   ├── app/
+│   │   ├── page.tsx    Fetches /api/health and displays the status
+│   │   ├── layout.tsx  Root layout
+│   │   └── globals.css Tailwind entry point
+│   └── .env         NEXT_PUBLIC_API_URL=http://localhost:3001
 ├── server/          Express / FastAPI / Spring Boot
-│   └── .env         SERVER_PORT=3001, CLIENT_ORIGIN=http://localhost:5173
+│   └── .env         SERVER_PORT=3001, CLIENT_ORIGIN=http://localhost:3000
 ├── .env.example     Reference for every environment variable
 ├── .gitignore
 ├── package.json     Root scripts: dev, install:all, build
@@ -130,14 +132,17 @@ my-app/
 
 Identical names across all three templates:
 
-| Variable        | Where    | Default                 | Purpose             |
-| --------------- | -------- | ----------------------- | ------------------- |
-| `SERVER_PORT`   | `server` | `3001`                  | Backend port        |
-| `CLIENT_ORIGIN` | `server` | `http://localhost:5173` | Allowed CORS origin |
-| `VITE_API_URL`  | `client` | `http://localhost:3001` | Backend URL         |
+| Variable              | Where    | Default                 | Purpose             |
+| --------------------- | -------- | ----------------------- | ------------------- |
+| `SERVER_PORT`         | `server` | `3001`                  | Backend port        |
+| `CLIENT_ORIGIN`       | `server` | `http://localhost:3000` | Allowed CORS origin |
+| `NEXT_PUBLIC_API_URL` | `client` | `http://localhost:3001` | Backend URL         |
 
 Working `.env` files are generated with these defaults, so a fresh project runs
 without editing anything.
+
+Next.js only exposes `NEXT_PUBLIC_`-prefixed variables to browser code and
+inlines them at build time, so restart the dev server after changing one.
 
 ## Repository layout
 
@@ -161,6 +166,10 @@ Notes for contributors:
   leading underscore (`_env`, `_gitignore`, `_mvn`) and the CLI restores the
   real names while copying. Add new dotfiles the same way, or they will be
   missing for anyone who installs from npm.
+- Build output can appear inside `templates/` on its own — an IDE Java
+  extension will happily compile `templates/springboot/server/pom.xml` into a
+  `target/` directory. The `!templates/**/…` entries in `files` keep that (plus
+  `.next/`, `.venv/`, `out/`) out of the published package.
 
 Check what would actually ship before publishing:
 

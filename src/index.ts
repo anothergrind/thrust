@@ -33,9 +33,9 @@ const DEV_COMMANDS: Record<Stack, string> = {
 const SENTINEL = "__PROJECT_NAME__";
 
 const TEXT_EXTENSIONS = new Set([
-  ".json", ".ts", ".tsx", ".js", ".jsx", ".html", ".css",
-  ".md", ".yml", ".yaml", ".toml", ".xml", ".env", ".txt",
-  ".py", ".java", ".properties", ".gradle", ".cfg",
+  ".json", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs",
+  ".html", ".css", ".md", ".yml", ".yaml", ".toml", ".xml",
+  ".env", ".txt", ".py", ".java", ".properties", ".gradle", ".cfg",
 ]);
 
 function isTextFile(filename: string): boolean {

@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 load_dotenv()
 
 SERVER_PORT = int(os.getenv("SERVER_PORT", "3001"))
-CLIENT_ORIGIN = os.getenv("CLIENT_ORIGIN", "http://localhost:5173")
+CLIENT_ORIGIN = os.getenv("CLIENT_ORIGIN", "http://localhost:3000")
 
 app = FastAPI(title="__PROJECT_NAME__")
 

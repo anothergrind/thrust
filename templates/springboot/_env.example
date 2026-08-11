@@ -1,6 +1,6 @@
 # Server
 SERVER_PORT=3001
-CLIENT_ORIGIN=http://localhost:5173
+CLIENT_ORIGIN=http://localhost:3000
 
-# Client (Vite requires the VITE_ prefix to expose a variable to the browser)
-VITE_API_URL=http://localhost:3001
+# Client (Next.js requires the NEXT_PUBLIC_ prefix to expose a variable to the browser)
+NEXT_PUBLIC_API_URL=http://localhost:3001

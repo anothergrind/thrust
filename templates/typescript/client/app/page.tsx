@@ -1,8 +1,10 @@
+"use client";
+
 import { useEffect, useState } from "react";
 
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3001";
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
 
-export default function App() {
+export default function Home() {
   const [health, setHealth] = useState<string>("checking...");
 
   useEffect(() => {

@@ -1,6 +1,6 @@
 # __PROJECT_NAME__
 
-Full-stack app with **React + Vite + Tailwind** frontend and **Spring Boot** backend.
+Full-stack app with **Next.js + React + Tailwind** frontend and **Spring Boot** backend.
 
 ## Prerequisites
 
@@ -21,7 +21,7 @@ npm run install:all
 npm run dev
 ```
 
-The client runs on [http://localhost:5173](http://localhost:5173) and the server on [http://localhost:3001](http://localhost:3001).
+The client runs on [http://localhost:3000](http://localhost:3000) and the server on [http://localhost:3001](http://localhost:3001).
 
 > The first `npm run dev` is slow — Maven downloads the Spring dependency tree.
 > Subsequent starts are fast.
@@ -29,9 +29,11 @@ The client runs on [http://localhost:5173](http://localhost:5173) and the server
 ## Project structure
 
 ```
-├── client/                      React + Vite + Tailwind frontend
-│   └── src/
-│       └── App.tsx              Main app component (fetches /api/health)
+├── client/                      Next.js frontend (App Router)
+│   └── app/
+│       ├── page.tsx             Home page — fetches /api/health
+│       ├── layout.tsx           Root layout
+│       └── globals.css          Tailwind entry point
 ├── server/                      Spring Boot backend
 │   ├── pom.xml                  Maven build
 │   ├── mvnw, mvnw.cmd, .mvn/    Maven Wrapper (no system Maven needed)
@@ -53,8 +55,8 @@ The client runs on [http://localhost:5173](http://localhost:5173) and the server
 | Variable        | Where    | Default                 | Purpose             |
 | --------------- | -------- | ----------------------- | ------------------- |
 | `SERVER_PORT`   | `server` | `3001`                  | Backend port        |
-| `CLIENT_ORIGIN` | `server` | `http://localhost:5173` | Allowed CORS origin |
-| `VITE_API_URL`  | `client` | `http://localhost:3001` | Backend URL         |
+| `CLIENT_ORIGIN` | `server` | `http://localhost:3000` | Allowed CORS origin |
+| `NEXT_PUBLIC_API_URL`  | `client` | `http://localhost:3001` | Backend URL         |
 
 Spring does not read `.env` files natively, so `scripts/mvn.mjs` loads
 `server/.env` and passes it through as environment variables. That keeps the

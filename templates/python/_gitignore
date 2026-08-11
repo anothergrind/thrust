@@ -1,5 +1,7 @@
 node_modules/
 dist/
+.next/
+out/
 .venv/
 __pycache__/
 *.pyc
