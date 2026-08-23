@@ -29,7 +29,7 @@ jobs:
       - run: npm test
 
   generate:
-    name: Generate ${{ matrix.stack }} + ${{ matrix.frontend }}
+    name: Generate ${{ matrix.stack }} + ${{ matrix.frontend }} + ${{ matrix.db }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -39,12 +39,18 @@ jobs:
       # runner time re-proving the same seam.
       matrix:
         include:
-          - { stack: typescript, frontend: next }
-          - { stack: python, frontend: next }
-          - { stack: springboot, frontend: next }
-          - { stack: nextjs, frontend: next }
-          - { stack: typescript, frontend: svelte }
-          - { stack: typescript, frontend: vue }
+          - { stack: typescript, frontend: next, db: none }
+          - { stack: python, frontend: next, db: none }
+          - { stack: springboot, frontend: next, db: none }
+          - { stack: nextjs, frontend: next, db: none }
+          - { stack: typescript, frontend: svelte, db: none }
+          - { stack: typescript, frontend: vue, db: none }
+          # The database layer, on the engine that needs no server running.
+          # Postgres and MySQL differ only in driver and URL.
+          - { stack: typescript, frontend: next, db: sqlite }
+          - { stack: python, frontend: next, db: sqlite }
+          - { stack: springboot, frontend: next, db: sqlite }
+          - { stack: nextjs, frontend: next, db: sqlite }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -66,5 +72,5 @@ jobs:
       # Scaffolds the stack, installs it, boots `npm run dev`, and asserts
       # /api/health, CORS and the rendered page.
       - name: Smoke test
-        run: npm run smoke -- --stack=${{ matrix.stack }} --frontend=${{ matrix.frontend }}
+        run: npm run smoke -- --stack=${{ matrix.stack }} --frontend=${{ matrix.frontend }} --db=${{ matrix.db }}
         timeout-minutes: 25

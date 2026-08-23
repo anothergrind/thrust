@@ -23,6 +23,8 @@ A ready-to-run project with:
 - **Glue already wired**: CORS configured, a `GET /api/health` endpoint, the
   frontend fetching it on load, and `.env` files with matching variable names
 - **One command** (`npm run dev`) starts frontend and backend together
+- **Optional database layer** (`--db`) with a model, a client and a worked
+  `/api/items` endpoint already in place
 
 ## Running the CLI
 
@@ -99,6 +101,7 @@ or path", so you can type `~/code/my-app` there rather than `cd`-ing first.
 | ---------------- | -------------------------------------------------------- |
 | `--stack <name>` | `typescript`, `python`, `springboot`, or `nextjs`. Skips the prompt |
 | `--frontend <name>` | `next`, `svelte`, or `vue`. Defaults to `next`         |
+| `--db <name>`    | `sqlite`, `postgres`, or `mysql`. Defaults to none        |
 | `--no-install`   | Skip dependency installation                             |
 | `--no-git`       | Skip git repository initialization                       |
 | `--github`       | Create a GitHub repository and push (requires `gh`)      |
@@ -201,6 +204,37 @@ Stack-specific notes:
   `app/api/`. One `npm install`, one process, one port. Pick it when the
   backend is only ever going to serve this frontend; pick one of the others
   when the API needs its own language or its own life.
+
+## Database
+
+Optional, and off unless you ask for it. `--db=sqlite` (or `postgres`, or
+`mysql`) adds a real data layer to whichever stack you picked, using the ORM
+that stack's ecosystem already expects:
+
+| Stack        | Layer               | You get                                  |
+| ------------ | ------------------- | ---------------------------------------- |
+| `typescript` | Prisma              | `schema.prisma`, a client, `items.ts`    |
+| `nextjs`     | Prisma              | `schema.prisma`, `lib/db.ts`, a route    |
+| `python`     | SQLAlchemy          | `db.py`, `models.py`, `items.py`         |
+| `springboot` | Spring Data JPA     | `Item`, `ItemRepository`, a controller   |
+
+Each one lands with the same worked example — `GET /api/items` and
+`POST /api/items` against an `Item` model — so there is something to copy
+rather than a blank ORM to configure. Delete it once you have your own models.
+
+The connection string is always `DATABASE_URL` in `server/.env`, whichever
+stack and engine you chose. `postgres` is also how you reach Supabase, Neon or
+RDS: keep the layer and point `DATABASE_URL` at their connection string.
+
+```bash
+npm create thrust@latest my-app -- --stack=typescript --db=sqlite
+```
+
+SQLite needs nothing installed — the file is created during `npm install`, and
+`npm run dev` works immediately. `postgres` and `mysql` scaffold the same code
+against a server you point them at; create the schema with
+`npm run db:push --prefix server` (Prisma) once it's reachable, or let
+SQLAlchemy and Hibernate create the tables on first start.
 
 ## Generated project structure
 

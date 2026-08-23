@@ -1,6 +1,7 @@
 import "dotenv/config";
 import express from "express";
 import cors from "cors";
+// thrust:imports
 
 const app = express();
 const PORT = process.env.SERVER_PORT || 3001;
@@ -12,6 +13,8 @@ app.use(express.json());
 app.get("/api/health", (_req, res) => {
   res.json({ status: "ok" });
 });
+
+// thrust:routes
 
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`);

@@ -35,10 +35,13 @@ export function buildNextSteps(
   target: string,
   stack: Stack,
   alreadyInstalled: boolean,
-  needsRemote: boolean
+  needsRemote: boolean,
+  extraInstallSteps: string[] = []
 ): string[] {
   const steps = [`cd ${target}`];
-  if (!alreadyInstalled) steps.push(INSTALL_COMMANDS[stack].join(" && "));
+  if (!alreadyInstalled) {
+    steps.push([...INSTALL_COMMANDS[stack], ...extraInstallSteps].join(" && "));
+  }
   steps.push(DEV_COMMANDS[stack]);
   if (needsRemote) {
     steps.push("git remote add origin <your-repo-url>");

@@ -12,6 +12,7 @@
  *   node scripts/smoke.mjs                    every stack, one after another
  *   node scripts/smoke.mjs --stack=python     just one
  *   node scripts/smoke.mjs --frontend=svelte  with a different frontend
+ *   node scripts/smoke.mjs --db=sqlite        with the database layer
  *   node scripts/smoke.mjs --keep             leave the generated project behind
  */
 import { spawn } from "node:child_process";
@@ -61,11 +62,13 @@ const INSTALL_TIMEOUT_MS = {
 function parseArgs(argv) {
   const stacks = [];
   let frontend = "next";
+  let db = "none";
   let keep = false;
   for (const arg of argv) {
     if (arg === "--keep") keep = true;
     else if (arg.startsWith("--stack=")) stacks.push(arg.slice("--stack=".length));
     else if (arg.startsWith("--frontend=")) frontend = arg.slice("--frontend=".length);
+    else if (arg.startsWith("--db=")) db = arg.slice("--db=".length);
     else throw new Error(`Unknown argument: ${arg}`);
   }
   for (const stack of stacks) {
@@ -77,7 +80,7 @@ function parseArgs(argv) {
   if (!frontends.includes(frontend)) {
     throw new Error(`Unknown frontend "${frontend}". Choose from: ${frontends.join(", ")}`);
   }
-  return { stacks: stacks.length ? stacks : ALL_STACKS, frontend, keep };
+  return { stacks: stacks.length ? stacks : ALL_STACKS, frontend, db, keep };
 }
 
 function log(stack, message) {
@@ -140,7 +143,7 @@ function stop(child) {
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** Polls until `check` returns a value, or gives up and throws. */
-async function until(description, timeoutMs, check) {
+async function until(description, timeoutMs, output, check) {
   const deadline = Date.now() + timeoutMs;
   let lastError;
   while (Date.now() < deadline) {
@@ -153,7 +156,10 @@ async function until(description, timeoutMs, check) {
     await wait(1000);
   }
   const detail = lastError ? `: ${lastError.message}` : "";
-  throw new Error(`Timed out waiting for ${description}${detail}`);
+  // The dev server's own output is the only thing that explains a boot that
+  // never happened, so a timeout carries it.
+  throw new Error(`Timed out waiting for ${description}${detail}
+${output.join("")}`);
 }
 
 /**
@@ -175,16 +181,29 @@ function portsFor(stack) {
   return { server: LAYOUT[stack] === "split" ? 43100 + offset : client, client };
 }
 
-/** Split stacks only: point the two halves at the ports this run picked. */
+/**
+ * Split stacks only: point the two halves at the ports this run picked, while
+ * leaving every other line alone — a database layer has already written
+ * DATABASE_URL into the same file, and overwriting it costs the run its
+ * database.
+ */
+async function rewriteEnv(envPath, values) {
+  const existing = await fs.readFile(envPath, "utf-8").catch(() => "");
+  const kept = existing
+    .split(/\r?\n/)
+    .filter((line) => line.trim() && !Object.keys(values).some((key) => line.startsWith(`${key}=`)));
+  const updated = [...Object.entries(values).map(([key, value]) => `${key}=${value}`), ...kept];
+  await fs.writeFile(envPath, `${updated.join("\n")}\n`);
+}
+
 async function writeEnv(project, ports, frontend) {
-  await fs.writeFile(
-    path.join(project, "server", ".env"),
-    `SERVER_PORT=${ports.server}\nCLIENT_ORIGIN=http://localhost:${ports.client}\n`
-  );
-  await fs.writeFile(
-    path.join(project, "client", ".env"),
-    `${FRONTEND_DETAILS[frontend].apiEnv}=http://localhost:${ports.server}\n`
-  );
+  await rewriteEnv(path.join(project, "server", ".env"), {
+    SERVER_PORT: ports.server,
+    CLIENT_ORIGIN: `http://localhost:${ports.client}`,
+  });
+  await rewriteEnv(path.join(project, "client", ".env"), {
+    [FRONTEND_DETAILS[frontend].apiEnv]: `http://localhost:${ports.server}`,
+  });
 }
 
 function assertEqual(actual, expected, what) {
@@ -192,7 +211,7 @@ function assertEqual(actual, expected, what) {
   if (a !== b) throw new Error(`${what}: expected ${b}, got ${a}`);
 }
 
-async function smoke(stack, frontend, keep) {
+async function smoke(stack, frontend, db, keep) {
   const workspace = await fs.mkdtemp(path.join(os.tmpdir(), `thrust-smoke-${stack}-`));
   const project = path.join(workspace, `${stack}-app`);
   const ports = portsFor(stack);
@@ -200,6 +219,7 @@ async function smoke(stack, frontend, keep) {
   const usesFrontend = stackTakesFrontend(stack);
   const args = [CLI, project, `--stack=${stack}`, "--no-git"];
   if (usesFrontend) args.push(`--frontend=${frontend}`);
+  if (db !== "none") args.push(`--db=${db}`);
 
   log(stack, `scaffolding ${usesFrontend ? `with ${frontend} ` : ""}into ${project}`);
   await runToCompletion(process.execPath, args, {
@@ -232,7 +252,7 @@ async function smoke(stack, frontend, keep) {
   try {
     const health = await Promise.race([
       devExited,
-      until("GET /api/health", BOOT_TIMEOUT_MS[stack], async () => {
+      until("GET /api/health", BOOT_TIMEOUT_MS[stack], output, async () => {
         const response = await get(`http://localhost:${ports.server}/api/health`);
         if (response.ok) return response.json();
       }),
@@ -257,7 +277,7 @@ async function smoke(stack, frontend, keep) {
 
     const page = await Promise.race([
       devExited,
-      until("the frontend to serve a page", BOOT_TIMEOUT_MS[stack], async () => {
+      until("the frontend to serve a page", BOOT_TIMEOUT_MS[stack], output, async () => {
         const response = await get(`http://localhost:${ports.client}/`);
         if (response.ok) return response.text();
       }),
@@ -266,6 +286,27 @@ async function smoke(stack, frontend, keep) {
       throw new Error(`${stack}: the page did not render the project name`);
     }
     log(stack, "the frontend served its page");
+
+    // With a database layer the project also has a worked CRUD endpoint, and
+    // that is what proves the ORM, the schema and the connection all landed.
+    if (db !== "none") {
+      const apiBase = `http://localhost:${ports.server}/api/items`;
+      const created = await fetch(apiBase, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "smoke test" }),
+        signal: AbortSignal.timeout(15_000),
+      });
+      if (created.status !== 201) {
+        throw new Error(`${stack}: POST /api/items answered ${created.status}`);
+      }
+
+      const listed = await (await get(apiBase)).json();
+      if (!listed.some((item) => item.name === "smoke test")) {
+        throw new Error(`${stack}: the row just created isn't in GET /api/items`);
+      }
+      log(stack, `${db}: POST then GET /api/items round-tripped a row`);
+    }
   } finally {
     stop(dev);
     await wait(500);
@@ -277,11 +318,14 @@ async function smoke(stack, frontend, keep) {
   }
 }
 
-const { stacks, frontend, keep } = parseArgs(process.argv.slice(2));
+const { stacks, frontend, db, keep } = parseArgs(process.argv.slice(2));
 
 for (const stack of stacks) {
-  await smoke(stack, frontend, keep);
+  await smoke(stack, frontend, db, keep);
   log(stack, "ok");
 }
 
-console.log(`Smoke tests passed: ${stacks.map((s) => `${s}+${frontend}`).join(", ")}`);
+const suffix = db === "none" ? "" : `+${db}`;
+console.log(
+  `Smoke tests passed: ${stacks.map((s) => `${s}+${frontend}${suffix}`).join(", ")}`
+);

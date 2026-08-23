@@ -6,6 +6,15 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { projectNameError, projectNameWarnings } from "./validate.js";
+import { copyDir, replaceInDir, stripMarkers } from "./copy.js";
+import {
+  DATABASE_LABELS,
+  DATABASES,
+  isEngine,
+  planDatabase,
+  type Database,
+} from "./databases.js";
+import { applyDatabase } from "./database-apply.js";
 import {
   buildNextSteps,
   FRONTEND_DETAILS,
@@ -32,79 +41,6 @@ const __dirname = path.dirname(__filename);
 const PROJECT_NAME_SENTINEL = "__PROJECT_NAME__";
 const FRONTEND_LABEL_SENTINEL = "__FRONTEND_LABEL__";
 const CLIENT_API_ENV_SENTINEL = "__CLIENT_API_ENV__";
-
-const TEXT_EXTENSIONS = new Set([
-  ".json", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs",
-  ".html", ".css", ".md", ".yml", ".yaml", ".toml", ".xml",
-  ".env", ".txt", ".py", ".java", ".properties", ".gradle", ".cfg",
-  ".svelte", ".vue",
-]);
-
-function isTextFile(filename: string): boolean {
-  if (filename.startsWith("_env") || filename.startsWith(".env")) return true;
-  const ext = path.extname(filename).toLowerCase();
-  return TEXT_EXTENSIONS.has(ext);
-}
-
-/**
- * npm strips dotfiles from published tarballs, so templates store them with a
- * leading underscore and we restore the real name on copy.
- */
-function renameDotfile(name: string): string {
-  if (name === "_gitignore") return ".gitignore";
-  if (name === "_env") return ".env";
-  if (name === "_env.example") return ".env.example";
-  if (name === "_mvn") return ".mvn";
-  return name;
-}
-
-/**
- * Files that have to stay runnable. An npm tarball built on Windows carries no
- * executable bits at all, so the Maven wrapper arrives unusable on macOS and
- * Linux unless the bit is put back here.
- */
-const EXECUTABLE_FILES = new Set(["mvnw"]);
-
-async function copyDir(src: string, dest: string): Promise<void> {
-  await fs.mkdir(dest, { recursive: true });
-  const entries = await fs.readdir(src, { withFileTypes: true });
-  for (const entry of entries) {
-    const srcPath = path.join(src, entry.name);
-    const destName = renameDotfile(entry.name);
-    const destPath = path.join(dest, destName);
-    if (entry.isDirectory()) {
-      await copyDir(srcPath, destPath);
-    } else {
-      await fs.copyFile(srcPath, destPath);
-      if (process.platform !== "win32" && EXECUTABLE_FILES.has(destName)) {
-        await fs.chmod(destPath, 0o755);
-      }
-    }
-  }
-}
-
-async function replaceInDir(
-  dir: string,
-  replacements: Record<string, string>
-): Promise<void> {
-  const entries = await fs.readdir(dir, { withFileTypes: true });
-  for (const entry of entries) {
-    const fullPath = path.join(dir, entry.name);
-    if (entry.isDirectory()) {
-      if (entry.name === "node_modules") continue;
-      await replaceInDir(fullPath, replacements);
-    } else if (isTextFile(entry.name)) {
-      const content = await fs.readFile(fullPath, "utf-8");
-      let updated = content;
-      for (const [sentinel, value] of Object.entries(replacements)) {
-        updated = updated.replaceAll(sentinel, value);
-      }
-      if (updated !== content) {
-        await fs.writeFile(fullPath, updated, "utf-8");
-      }
-    }
-  }
-}
 
 /** True if `command --version` runs successfully, i.e. it's on PATH. */
 async function hasCommand(command: string): Promise<boolean> {
@@ -208,6 +144,7 @@ const BACKENDS_DIR = path.join(TEMPLATES_DIR, "backends");
 const FRONTENDS_DIR = path.join(TEMPLATES_DIR, "frontends");
 /** The all-in-one stack is a whole project, not a backend half. */
 const NEXTJS_DIR = path.join(TEMPLATES_DIR, "nextjs");
+const DATABASES_DIR = path.join(TEMPLATES_DIR, "databases");
 
 async function directoriesIn(dir: string): Promise<Set<string>> {
   try {
@@ -245,13 +182,16 @@ async function scaffold(
   target: string,
   destDir: string,
   stack: Stack,
-  frontend: Frontend
-): Promise<void> {
+  frontend: Frontend,
+  database: Database
+): Promise<string[]> {
+  // Setup a database layer can only do once the dependencies are installed.
+  const extraInstallSteps: string[] = [];
   const spinner = p.spinner();
-  const description = stackTakesFrontend(stack)
-    ? `${STACK_LABELS[stack]} + ${FRONTEND_LABELS[frontend]}`
-    : STACK_LABELS[stack];
-  spinner.start(`Copying ${description} template...`);
+  const parts = [STACK_LABELS[stack]];
+  if (stackTakesFrontend(stack)) parts.push(FRONTEND_LABELS[frontend]);
+  if (isEngine(database)) parts.push(DATABASE_LABELS[database].split(" —")[0]);
+  spinner.start(`Copying ${parts.join(" + ")} template...`);
 
   if (stackTakesFrontend(stack)) {
     await copyDir(path.join(BACKENDS_DIR, stack), destDir);
@@ -264,23 +204,64 @@ async function scaffold(
     await copyDir(NEXTJS_DIR, destDir);
   }
 
-  await replaceInDir(destDir, {
+  const replacements: Record<string, string> = {
     // The project name becomes an npm package name and the browser tab title,
     // so it must be the folder name alone — never a path like "../my-app".
     [PROJECT_NAME_SENTINEL]: path.basename(destDir),
     [FRONTEND_LABEL_SENTINEL]: FRONTEND_DETAILS[frontend].label,
     [CLIENT_API_ENV_SENTINEL]: FRONTEND_DETAILS[frontend].apiEnv,
-  });
+  };
+
+  if (isEngine(database)) {
+    const plan = planDatabase(stack, database);
+    await applyDatabase(destDir, path.join(DATABASES_DIR, stack), plan);
+    await writeDatabaseUrl(destDir, stack, plan.url);
+    Object.assign(replacements, plan.replacements);
+    if (plan.installStep) extraInstallSteps.push(plan.installStep);
+  }
+
+  await replaceInDir(destDir, replacements);
+  // Whatever the optional layers didn't use is scaffolding noise.
+  await stripMarkers(destDir);
 
   spinner.stop(`Template copied to ${target}/`);
+  return extraInstallSteps;
+}
+
+/**
+ * DATABASE_URL goes wherever that stack reads its environment from: the
+ * backend's own .env for a split project, the app root for the all-in-one.
+ */
+async function writeDatabaseUrl(
+  destDir: string,
+  stack: Stack,
+  url: string
+): Promise<void> {
+  const line = `DATABASE_URL="${url}"\n`;
+  const example = ["", "# Database", line].join("\n");
+
+  if (stackTakesFrontend(stack)) {
+    await fs.appendFile(path.join(destDir, "server", ".env"), line, "utf-8");
+    await fs.appendFile(path.join(destDir, ".env.example"), example, "utf-8");
+    return;
+  }
+
+  // The all-in-one app has no .env at all until a database needs one.
+  await fs.writeFile(path.join(destDir, ".env"), line, "utf-8");
+  await fs.writeFile(path.join(destDir, ".env.example"), line, "utf-8");
+  await fs.appendFile(path.join(destDir, ".gitignore"), `\n# Environment\n.env\n!.env.example\n`, "utf-8");
 }
 
 /** Returns true only if every install command succeeded. */
-async function runInstall(destDir: string, stack: Stack): Promise<boolean> {
+async function runInstall(
+  destDir: string,
+  stack: Stack,
+  extraSteps: string[]
+): Promise<boolean> {
   const spinner = p.spinner();
   spinner.start("Installing dependencies...");
   try {
-    for (const cmd of INSTALL_COMMANDS[stack]) {
+    for (const cmd of [...INSTALL_COMMANDS[stack], ...extraSteps]) {
       await execaCommand(cmd, { cwd: destDir });
     }
     spinner.stop("Dependencies installed.");
@@ -295,9 +276,16 @@ function printNextSteps(
   target: string,
   stack: Stack,
   alreadyInstalled: boolean,
-  needsRemote: boolean
+  needsRemote: boolean,
+  extraInstallSteps: string[]
 ): void {
-  const steps = buildNextSteps(target, stack, alreadyInstalled, needsRemote);
+  const steps = buildNextSteps(
+    target,
+    stack,
+    alreadyInstalled,
+    needsRemote,
+    extraInstallSteps
+  );
   p.note(steps.join("\n"), "Next steps");
 }
 
@@ -364,6 +352,20 @@ async function selectFrontend(available: Frontend[]): Promise<Frontend> {
   return frontend as Frontend;
 }
 
+async function selectDatabase(): Promise<Database> {
+  const database = await p.select({
+    message: "Add a database layer?",
+    options: DATABASES.map((d) => ({ value: d, label: DATABASE_LABELS[d] })),
+  });
+
+  if (p.isCancel(database)) {
+    p.cancel("Cancelled.");
+    process.exit(0);
+  }
+
+  return database as Database;
+}
+
 async function main(): Promise<void> {
   const program = new Command()
     .name("create-thrust")
@@ -377,6 +379,10 @@ async function main(): Promise<void> {
       "--frontend <frontend>",
       `Frontend framework: ${FRONTENDS.join(", ")} (default: next)`
     )
+    .option(
+      "--db <database>",
+      `Database layer: ${DATABASES.join(", ")} (default: none)`
+    )
     .option("--no-install", "Skip dependency installation")
     .option("--no-git", "Skip git repository initialization")
     .option("--github", "Create a GitHub repository and push (requires gh)")
@@ -387,6 +393,7 @@ async function main(): Promise<void> {
   const opts = program.opts<{
     stack?: string;
     frontend?: string;
+    db?: string;
     install: boolean;
     git: boolean;
     github?: boolean;
@@ -409,6 +416,7 @@ async function main(): Promise<void> {
   let target: string;
   let stack: Stack;
   let frontend: Frontend = "next";
+  let database: Database = "none";
 
   if (isNonInteractive) {
     target = args[0];
@@ -452,6 +460,16 @@ async function main(): Promise<void> {
       }
       frontend = opts.frontend as Frontend;
     }
+
+    if (opts.db !== undefined) {
+      if (!DATABASES.includes(opts.db as Database)) {
+        console.error(
+          `Unknown database "${opts.db}". Choose from: ${DATABASES.join(", ")}`
+        );
+        process.exit(1);
+      }
+      database = opts.db as Database;
+    }
   } else {
     p.intro("thrust — scaffold a full-stack hackathon project");
     target = args[0] ?? (await promptProjectName());
@@ -469,6 +487,8 @@ async function main(): Promise<void> {
     if (stackTakesFrontend(stack) && availableFrontends.length > 1) {
       frontend = await selectFrontend(availableFrontends);
     }
+
+    database = await selectDatabase();
   }
 
   const destDir = resolveTarget(target);
@@ -507,7 +527,7 @@ async function main(): Promise<void> {
     }
   }
 
-  await scaffold(target, destDir, stack, frontend);
+  const extraInstallSteps = await scaffold(target, destDir, stack, frontend, database);
 
   let installed = false;
 
@@ -520,7 +540,7 @@ async function main(): Promise<void> {
       process.exit(0);
     }
     if (doInstall) {
-      installed = await runInstall(destDir, stack);
+      installed = await runInstall(destDir, stack, extraInstallSteps);
     }
   }
 
@@ -594,7 +614,7 @@ async function main(): Promise<void> {
     }
   }
 
-  printNextSteps(target, stack, installed, committed && !pushed);
+  printNextSteps(target, stack, installed, committed && !pushed, extraInstallSteps);
   p.outro("Happy hacking!");
 }
 

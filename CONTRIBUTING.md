@@ -38,6 +38,7 @@ thrust/
     │   ├── next/           Next.js (React)
     │   ├── svelte/         SvelteKit
     │   └── vue/            Vue 3 + Vite
+    ├── databases/      The opt-in data layer, one fragment per stack
     └── nextjs/         The all-in-one stack: a whole project, not a half
 ```
 
@@ -97,6 +98,24 @@ Both run in CI on every push, across Ubuntu and Windows for the unit suite.
   extension will happily compile `templates/springboot/server/pom.xml` into a
   `target/` directory. The `!templates/**/…` entries in `files` keep that (plus
   `.next/`, `.venv/`, `out/`) out of the published package.
+
+## Working on the database layer
+
+`--db` copies `templates/databases/<stack>` over the project and then edits the
+files that already exist. Those edits are described by `planDatabase` in
+`src/databases.ts` — dependencies to merge into a manifest, lines to append to
+`requirements.txt`, Maven dependencies, Spring properties, and the import and
+route lines for the backend's entry point — and carried out by
+`src/database-apply.ts`. Adding an engine usually means adding a row to the
+`PRISMA`, `SQLALCHEMY` and `JDBC` tables, not writing new code.
+
+Entry points carry `thrust:imports` and `thrust:routes` marker comments so the
+layer knows where its lines go. Anything not used is stripped before the
+project is finished, so a project scaffolded without a database has no trace of
+the mechanism.
+
+Only SQLite is booted in CI: Postgres and MySQL differ from it by a driver and
+a URL, and standing servers up per job would cost more than it proves.
 
 After a template change, `npm run release:check` shows what would actually
 ship. [RELEASING.md](RELEASING.md) covers the rest of the release flow.

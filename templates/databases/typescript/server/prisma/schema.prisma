@@ -1,0 +1,21 @@
+// Prisma schema — the one place your tables are described.
+//
+// Change a model here, then apply it with:
+//   npm run db:push --prefix server
+//
+// https://www.prisma.io/docs/orm/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "__DB_PROVIDER__"
+  url      = env("DATABASE_URL")
+}
+
+model Item {
+  id        Int      @id @default(autoincrement())
+  name      String
+  createdAt DateTime @default(now())
+}

@@ -4,6 +4,7 @@ import uvicorn
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+# thrust:imports
 
 load_dotenv()
 
@@ -24,6 +25,9 @@ app.add_middleware(
 @app.get("/api/health")
 def health():
     return {"status": "ok"}
+
+
+# thrust:routes
 
 
 if __name__ == "__main__":

@@ -26,8 +26,11 @@ function loadEnv() {
     const separator = trimmed.indexOf("=");
     if (separator === -1) continue;
     const key = trimmed.slice(0, separator).trim();
+    // Quotes are part of .env syntax, not part of the value — a quoted
+    // DATABASE_URL would otherwise reach Spring with its quotes attached.
+    const value = trimmed.slice(separator + 1).trim().replace(/^(['"])(.*)\1$/, "$2");
     // A real environment variable always wins over the .env file.
-    if (!(key in env)) env[key] = trimmed.slice(separator + 1).trim();
+    if (!(key in env)) env[key] = value;
   }
   return env;
 }
