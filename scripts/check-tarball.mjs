@@ -49,6 +49,9 @@ export const REQUIRED_FILES = [
   "package/templates/springboot/server/mvnw",
   "package/templates/springboot/server/mvnw.cmd",
   "package/templates/springboot/server/_mvn/wrapper/maven-wrapper.properties",
+  "package/templates/nextjs/package.json",
+  "package/templates/nextjs/_gitignore",
+  "package/templates/nextjs/app/api/health/route.ts",
 ];
 
 /** Build output and installed dependencies that must never ship. */

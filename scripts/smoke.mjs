@@ -24,11 +24,34 @@ const CLI = path.join(REPO, "dist", "index.js");
 const isWindows = process.platform === "win32";
 const NPM = isWindows ? "npm.cmd" : "npm";
 
-const ALL_STACKS = ["typescript", "python", "springboot"];
+const ALL_STACKS = ["typescript", "python", "springboot", "nextjs"];
+
+/**
+ * "split" stacks run a frontend and a separate backend, wired by env files and
+ * CORS. "single" is the all-in-one Next.js app: one process, one port, and the
+ * API on the page's own origin — so there is no env file to write and no CORS
+ * header to check.
+ */
+const LAYOUT = {
+  typescript: "split",
+  python: "split",
+  springboot: "split",
+  nextjs: "single",
+};
 
 /** Spring Boot downloads Maven and a dependency tree on first run. */
-const BOOT_TIMEOUT_MS = { typescript: 180_000, python: 180_000, springboot: 600_000 };
-const INSTALL_TIMEOUT_MS = { typescript: 600_000, python: 600_000, springboot: 900_000 };
+const BOOT_TIMEOUT_MS = {
+  typescript: 180_000,
+  python: 180_000,
+  springboot: 600_000,
+  nextjs: 180_000,
+};
+const INSTALL_TIMEOUT_MS = {
+  typescript: 600_000,
+  python: 600_000,
+  springboot: 900_000,
+  nextjs: 600_000,
+};
 
 function parseArgs(argv) {
   const stacks = [];
@@ -132,9 +155,12 @@ function get(url, headers = {}) {
  */
 function portsFor(stack) {
   const offset = ALL_STACKS.indexOf(stack) * 2;
-  return { server: 43100 + offset, client: 43101 + offset };
+  const client = 43101 + offset;
+  // The all-in-one app serves its own API, so both live on one port.
+  return { server: LAYOUT[stack] === "split" ? 43100 + offset : client, client };
 }
 
+/** Split stacks only: point the two halves at the ports this run picked. */
 async function writeEnv(project, ports) {
   await fs.writeFile(
     path.join(project, "server", ".env"),
@@ -162,9 +188,15 @@ async function smoke(stack, keep) {
     timeout: INSTALL_TIMEOUT_MS[stack],
   });
 
-  await writeEnv(project, ports);
+  const split = LAYOUT[stack] === "split";
+  if (split) await writeEnv(project, ports);
 
-  log(stack, `starting npm run dev (api ${ports.server}, web ${ports.client})`);
+  log(
+    stack,
+    split
+      ? `starting npm run dev (api ${ports.server}, web ${ports.client})`
+      : `starting npm run dev (app ${ports.client})`
+  );
   const dev = spawnStep(NPM, ["run", "dev"], {
     cwd: project,
     env: { ...process.env, PORT: String(ports.client), BROWSER: "none" },
@@ -190,16 +222,19 @@ async function smoke(stack, keep) {
     log(stack, "GET /api/health answered with status ok");
 
     // The same request the page makes, so a CORS misconfiguration fails here
-    // rather than silently in someone's browser.
-    const origin = `http://localhost:${ports.client}`;
-    const cors = await get(`http://127.0.0.1:${ports.server}/api/health`, { Origin: origin });
-    const allowed = cors.headers.get("access-control-allow-origin");
-    if (allowed !== origin && allowed !== "*") {
-      throw new Error(
-        `${stack}: the backend does not allow the frontend origin (got ${allowed ?? "no header"})`
-      );
+    // rather than silently in someone's browser. The all-in-one app serves the
+    // API from the page's own origin, where CORS never enters into it.
+    if (split) {
+      const origin = `http://localhost:${ports.client}`;
+      const cors = await get(`http://127.0.0.1:${ports.server}/api/health`, { Origin: origin });
+      const allowed = cors.headers.get("access-control-allow-origin");
+      if (allowed !== origin && allowed !== "*") {
+        throw new Error(
+          `${stack}: the backend does not allow the frontend origin (got ${allowed ?? "no header"})`
+        );
+      }
+      log(stack, `CORS allows ${origin}`);
     }
-    log(stack, `CORS allows ${origin}`);
 
     const page = await Promise.race([
       devExited,

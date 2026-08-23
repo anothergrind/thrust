@@ -34,7 +34,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        stack: [typescript, python, springboot]
+        stack: [typescript, python, springboot, nextjs]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

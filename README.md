@@ -17,7 +17,8 @@ frontend/backend wiring and jump straight to features.
 A ready-to-run project with:
 
 - **Frontend**: Next.js + React + TypeScript + Tailwind CSS
-- **Backend**: your choice of Express, FastAPI, or Spring Boot
+- **Backend**: your choice of Express, FastAPI, Spring Boot — or Next.js
+  API routes, with no separate backend at all
 - **Glue already wired**: CORS configured, a `GET /api/health` endpoint, the
   frontend fetching it on load, and `.env` files with matching variable names
 - **One command** (`npm run dev`) starts frontend and backend together
@@ -95,7 +96,7 @@ or path", so you can type `~/code/my-app` there rather than `cd`-ing first.
 
 | Flag             | Description                                              |
 | ---------------- | -------------------------------------------------------- |
-| `--stack <name>` | `typescript`, `python`, or `springboot`. Skips the prompt |
+| `--stack <name>` | `typescript`, `python`, `springboot`, or `nextjs`. Skips the prompt |
 | `--no-install`   | Skip dependency installation                             |
 | `--no-git`       | Skip git repository initialization                       |
 | `--github`       | Create a GitHub repository and push (requires `gh`)      |
@@ -156,15 +157,17 @@ The page shows a green dot and `API: ok` when the frontend reaches the backend.
 
 ## Stacks
 
-| Stack        | Backend     | Needs beyond Node.js 18+ |
-| ------------ | ----------- | ------------------------ |
-| `typescript` | Express     | —                        |
-| `python`     | FastAPI     | Python 3.9+              |
-| `springboot` | Spring Boot | JDK 17+                  |
+| Stack        | Backend             | Needs beyond Node.js 18+ |
+| ------------ | ------------------- | ------------------------ |
+| `typescript` | Express             | —                        |
+| `python`     | FastAPI             | Python 3.9+              |
+| `springboot` | Spring Boot         | JDK 17+                  |
+| `nextjs`     | Next.js API routes  | —                        |
 
-All three ship the identical Next.js + React + Tailwind frontend, expose the same
-`GET /api/health`, use the same environment variable names, and start with the
-same `npm run dev`.
+Every stack ships the identical Next.js + React + Tailwind frontend, exposes the
+same `GET /api/health`, and starts with the same `npm run dev`. The first three
+run the frontend and backend as separate processes wired by environment
+variables; `nextjs` is one app serving both.
 
 Stack-specific notes:
 
@@ -173,6 +176,11 @@ Stack-specific notes:
 - **springboot** — the Maven Wrapper (`server/mvnw`) is included, so Maven does
   **not** need to be installed; it is downloaded on first run. The first
   `npm run dev` is slow while Maven fetches the Spring dependency tree.
+- **nextjs** — no `client/`, no `server/`, no CORS and no API URL to configure:
+  the page calls `/api/health` on its own origin, and route handlers live in
+  `app/api/`. One `npm install`, one process, one port. Pick it when the
+  backend is only ever going to serve this frontend; pick one of the others
+  when the API needs its own language or its own life.
 
 ## Generated project structure
 

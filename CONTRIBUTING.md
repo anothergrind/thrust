@@ -32,7 +32,8 @@ thrust/
 └── templates/
     ├── typescript/     Express
     ├── python/         FastAPI
-    └── springboot/     Spring Boot
+    ├── springboot/     Spring Boot
+    └── nextjs/         Next.js API routes, no separate backend
 ```
 
 ## Tests
@@ -69,10 +70,12 @@ Both run in CI on every push, across Ubuntu and Windows for the unit suite.
 - A file that must stay executable (`mvnw`) needs its git mode set with
   `git update-index --chmod=+x <file>` *and* an entry in `EXECUTABLE_FILES` in
   `src/index.ts`, because tarballs packed on Windows carry no executable bits.
-- Every backend answers `GET /api/health` with `{"status":"ok"}`, reads
-  `SERVER_PORT` and `CLIENT_ORIGIN`, and every frontend reads
-  `NEXT_PUBLIC_API_URL`. The smoke test enforces that contract, and a new
-  template is expected to keep it.
+- Every backend answers `GET /api/health` with `{"status":"ok"}`. A split
+  stack also reads `SERVER_PORT` and `CLIENT_ORIGIN` on the server and
+  `NEXT_PUBLIC_API_URL` on the client; a single-process stack like `nextjs`
+  has none of those, and `LAYOUT` in `scripts/smoke.mjs` says which is which.
+  The smoke test enforces that contract, and a new template is expected to
+  keep it.
 - Build output can appear inside `templates/` on its own — an IDE Java
   extension will happily compile `templates/springboot/server/pom.xml` into a
   `target/` directory. The `!templates/**/…` entries in `files` keep that (plus

@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "__PROJECT_NAME__",
-  description: "Scaffolded with create-launch",
+  description: "Scaffolded with thrust",
 };
 
 export default function RootLayout({
