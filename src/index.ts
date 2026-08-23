@@ -3,10 +3,16 @@ import { Command } from "commander";
 import * as p from "@clack/prompts";
 import { execa, execaCommand } from "execa";
 import fs from "node:fs/promises";
-import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { projectNameError, projectNameWarnings } from "./validate.js";
+import {
+  buildNextSteps,
+  INSTALL_COMMANDS,
+  STACK_LABELS,
+  STACKS,
+  type Stack,
+} from "./stacks.js";
 import {
   inspectTarget,
   resolveTarget,
@@ -17,27 +23,6 @@ import {
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
-const STACKS = ["typescript", "python", "springboot"] as const;
-type Stack = (typeof STACKS)[number];
-
-const STACK_LABELS: Record<Stack, string> = {
-  typescript: "TypeScript (Express)",
-  python: "Python (FastAPI)",
-  springboot: "Spring Boot",
-};
-
-const INSTALL_COMMANDS: Record<Stack, string[]> = {
-  typescript: ["npm install", "npm run install:all"],
-  python: ["npm install", "npm run install:all"],
-  springboot: ["npm install", "npm run install:all"],
-};
-
-const DEV_COMMANDS: Record<Stack, string> = {
-  typescript: "npm run dev",
-  python: "npm run dev",
-  springboot: "npm run dev",
-};
 
 const SENTINEL = "__PROJECT_NAME__";
 
@@ -246,14 +231,7 @@ function printNextSteps(
   alreadyInstalled: boolean,
   needsRemote: boolean
 ): void {
-  const steps = [`cd ${target}`];
-  if (!alreadyInstalled) steps.push(INSTALL_COMMANDS[stack].join(" && "));
-  steps.push(DEV_COMMANDS[stack]);
-  if (needsRemote) {
-    steps.push("git remote add origin <your-repo-url>");
-    steps.push("git push -u origin main");
-  }
-
+  const steps = buildNextSteps(target, stack, alreadyInstalled, needsRemote);
   p.note(steps.join("\n"), "Next steps");
 }
 
@@ -449,6 +427,16 @@ async function main(): Promise<void> {
   }
 
   let pushed = false;
+
+  // --github can't be honoured without a commit, and silently doing nothing
+  // would look like the push succeeded.
+  if (opts.github && !committed) {
+    p.log.warn(
+      opts.git
+        ? "--github had nothing to push, because the initial commit wasn't created."
+        : "--github needs a git repository, but --no-git was passed. Nothing was pushed."
+    );
+  }
 
   // Pushing is only offered once there's a commit to push.
   if (committed && (opts.github || !isNonInteractive)) {
