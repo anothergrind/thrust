@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  unit:
+    name: Unit tests (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      # The CLI makes an initial commit in the projects it generates, which
+      # needs an identity the runners don't set up.
+      - name: Give git an identity
+        run: |
+          git config --global user.name "thrust CI"
+          git config --global user.email "ci@example.com"
+      - run: npm ci
+      - run: npm test
+
+  generate:
+    name: Generate ${{ matrix.stack }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        stack: [typescript, python, springboot]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-python@v5
+        if: matrix.stack == 'python'
+        with:
+          python-version: "3.12"
+      # The template's pom targets Java 17.
+      - uses: actions/setup-java@v4
+        if: matrix.stack == 'springboot'
+        with:
+          distribution: temurin
+          java-version: "17"
+      - run: npm ci
+      - run: npm run build
+      # Scaffolds the stack, installs it, boots `npm run dev`, and asserts
+      # /api/health, CORS and the rendered page.
+      - name: Smoke test
+        run: npm run smoke -- --stack=${{ matrix.stack }}
+        timeout-minutes: 25

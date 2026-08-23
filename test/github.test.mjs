@@ -28,14 +28,34 @@ function holds(dir, command) {
   );
 }
 
-/** A PATH exactly like this machine's, minus every directory holding gh. */
-function pathWithoutGh() {
-  return directoriesOnPath()
-    .filter((dir) => !holds(dir, "gh"))
-    .join(path.delimiter);
+/**
+ * A PATH where `gh --version` cannot succeed, which is what the CLI checks.
+ *
+ * The two platforms need different tricks. On Windows a bare command name is
+ * resolved by CreateProcess, which only ever appends ".exe", so a shim script
+ * would be skipped over and the real gh.exe found anyway — there the
+ * directories holding gh are dropped instead. Everywhere else gh usually
+ * shares /usr/bin with git, so dropping directories would take git with it;
+ * a failing shim placed first is the way.
+ */
+async function pathWithoutGh() {
+  if (process.platform === "win32") {
+    return directoriesOnPath()
+      .filter((dir) => !holds(dir, "gh"))
+      .join(path.delimiter);
+  }
+  const shim = await fs.mkdtemp(path.join(os.tmpdir(), "thrust-no-gh-"));
+  const script = "#!/bin/sh\n" + "exit 1\n";
+  await fs.writeFile(path.join(shim, "gh"), script, { mode: 0o755 });
+  return shim + path.delimiter + (process.env.PATH ?? "");
 }
 
-const hasGit = directoriesOnPath().some((dir) => holds(dir, "git"));
+const GHLESS_PATH = await pathWithoutGh();
+
+/** git has to survive whatever pathWithoutGh did, or there is nothing to test. */
+const gitAvailable = GHLESS_PATH.split(path.delimiter)
+  .filter(Boolean)
+  .some((dir) => holds(dir, "git"));
 
 async function scaffold(args, env) {
   const cwd = await fs.mkdtemp(path.join(os.tmpdir(), "thrust-github-"));
@@ -71,11 +91,11 @@ test("install commands are listed when the install was skipped", () => {
 
 test(
   "--github without gh installed explains itself and falls back to manual steps",
-  { skip: !hasGit && "git is needed to reach the push step" },
+  { skip: !gitAvailable && "git shares a directory with gh here, so it can't be hidden" },
   async () => {
     const { cwd, output } = await scaffold(
       ["--stack=typescript", "--no-install", "--github"],
-      pathWithoutGh()
+      GHLESS_PATH
     );
 
     assert.match(output, /--github needs the GitHub CLI installed and authenticated/);
@@ -90,7 +110,7 @@ test(
 test("--github with --no-git says why it did nothing", async () => {
   const { cwd, output } = await scaffold(
     ["--stack=typescript", "--no-install", "--no-git", "--github"],
-    pathWithoutGh()
+    GHLESS_PATH
   );
 
   assert.match(output, /--github needs a git repository, but --no-git was passed/);
