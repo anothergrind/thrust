@@ -242,8 +242,12 @@ Notes for contributors:
 Check what would actually ship before publishing:
 
 ```bash
-npm pack --dry-run
+npm run release:check
 ```
+
+That packs a real tarball, prints what it contains, and fails if a required
+file is missing, a dotfile slipped in under its real name, or build output
+crept in. [RELEASING.md](RELEASING.md) has the full checklist.
 
 ## License
 
