@@ -130,7 +130,7 @@ async function initGitRepo(destDir: string): Promise<boolean> {
   try {
     await execa("git", ["init", "-b", "main"], { cwd: destDir });
     await execa("git", ["add", "-A"], { cwd: destDir });
-    await execa("git", ["commit", "-m", "Initial commit from create-launch"], {
+    await execa("git", ["commit", "-m", "Initial commit from thrust"], {
       cwd: destDir,
     });
     return true;
@@ -286,7 +286,7 @@ async function selectStack(available: Stack[]): Promise<Stack> {
 
 async function main(): Promise<void> {
   const program = new Command()
-    .name("create-launch")
+    .name("create-thrust")
     .description("Scaffold a full-stack hackathon project")
     .argument("[project-name]", "Name of the project")
     .option(
@@ -344,7 +344,7 @@ async function main(): Promise<void> {
     }
     stack = opts.stack as Stack;
   } else {
-    p.intro("create-launch — scaffold a full-stack hackathon project");
+    p.intro("thrust — scaffold a full-stack hackathon project");
     target = args[0] ?? (await promptProjectName());
     if (args[0]) {
       const invalid = validateTarget(target);

@@ -3,7 +3,7 @@
  * and falling back to a system `mvn` installation.
  *
  * It also loads server/.env into the child process environment, so SERVER_PORT
- * and CLIENT_ORIGIN behave exactly like they do in the other create-launch
+ * and CLIENT_ORIGIN behave exactly like they do in the other thrust
  * templates — application.properties reads them as ${SERVER_PORT} etc.
  */
 import { spawnSync } from "node:child_process";

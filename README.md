@@ -3,8 +3,9 @@
 CLI that scaffolds full-stack projects so hackathon teams can skip
 frontend/backend wiring and jump straight to features.
 
-> **Not published to npm yet.** `npm create launch` will not work until this
-> package is published. Until then, run it from source — see
+> **Not published to npm yet.** The package is called `create-thrust`, so
+> `npm create thrust@latest my-app` will be the whole installation step once
+> it ships. Until then, run it from source — see
 > [Running the CLI](#running-the-cli) below.
 
 ## What you get
@@ -30,6 +31,15 @@ npm run build    # compiles src/ to dist/ — required before every run
 `npm run build` must be re-run after any change to `src/`.
 
 ### Generate a project
+
+Once the package is published, no checkout is needed:
+
+```bash
+npm create thrust@latest my-app
+npm create thrust@latest my-app -- --stack=typescript   # flags need the --
+```
+
+From a checkout:
 
 ```bash
 # Interactive — prompts for project name, then backend stack

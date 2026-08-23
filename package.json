@@ -1,10 +1,10 @@
 {
-  "name": "create-launch",
+  "name": "create-thrust",
   "version": "0.1.0",
   "description": "Full-stack project scaffolding CLI for hackathon teams",
   "type": "module",
   "bin": {
-    "create-launch": "dist/index.js"
+    "create-thrust": "dist/index.js"
   },
   "scripts": {
     "build": "tsc",

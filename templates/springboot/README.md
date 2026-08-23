@@ -60,7 +60,7 @@ The client runs on [http://localhost:3000](http://localhost:3000) and the server
 
 Spring does not read `.env` files natively, so `scripts/mvn.mjs` loads
 `server/.env` and passes it through as environment variables. That keeps the
-variable names identical across every create-launch template.
+variable names identical across every thrust template.
 
 ## Upgrading Maven or Spring Boot
 
