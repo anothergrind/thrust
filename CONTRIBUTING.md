@@ -81,6 +81,24 @@ Both run in CI on every push, across Ubuntu and Windows for the unit suite.
 After a template change, `npm run release:check` shows what would actually
 ship. [RELEASING.md](RELEASING.md) covers the rest of the release flow.
 
+## Refreshing the README demo
+
+`docs/demo.gif` is rendered from `demo/demo.tape` by
+[VHS](https://github.com/charmbracelet/vhs), which drives the real CLI through
+the interactive flow — nothing in it is mocked up.
+
+```bash
+vhs demo/demo.tape       # writes docs/demo.gif and docs/demo-final.png
+```
+
+VHS needs ttyd and ffmpeg, so if you would rather not install it, the "Demo"
+workflow renders the tape on GitHub Actions — run it from the Actions tab (or
+push a change to the tape) and download the `demo` artifact.
+
+Re-record whenever the prompts change, and when the package is published: the
+tape types the from-source invocation today, and should type
+`npm create thrust@latest` once that works.
+
 ## Pull requests
 
 - Keep commits focused; one behaviour change per commit reads best in history.

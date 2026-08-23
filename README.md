@@ -8,6 +8,10 @@ frontend/backend wiring and jump straight to features.
 > it ships. Until then, run it from source — see
 > [Running the CLI](#running-the-cli) below.
 
+## Demo
+
+![Scaffolding a project with thrust: project name, backend stack, and the generated next steps](docs/demo.gif)
+
 ## What you get
 
 A ready-to-run project with:

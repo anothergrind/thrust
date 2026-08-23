@@ -1,0 +1,39 @@
+name: Demo
+
+# Renders demo/demo.tape so nobody needs VHS installed to refresh the README
+# recording. The GIF is uploaded as an artifact; download it and commit it to
+# docs/demo.gif when it looks right.
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - demo/demo.tape
+      - .github/workflows/demo.yml
+
+jobs:
+  record:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      # The CLI makes an initial commit in the project it generates, and the
+      # recording would show that step failing without an identity.
+      - name: Give git an identity
+        run: |
+          git config --global user.name "thrust demo"
+          git config --global user.email "demo@example.com"
+      - run: npm ci
+      - run: npm run build
+      - uses: charmbracelet/vhs-action@v2
+        with:
+          path: demo/demo.tape
+      - uses: actions/upload-artifact@v4
+        with:
+          name: demo
+          path: |
+            docs/demo.gif
+            docs/demo-final.png
+          if-no-files-found: error
