@@ -95,6 +95,13 @@ test("the Spring Boot wrapper directory is restored too", async () => {
 
   await fs.access(path.join(project, "server", ".mvn", "wrapper", "maven-wrapper.properties"));
   await assert.rejects(fs.access(path.join(project, "server", "_mvn")));
+
+  if (process.platform !== "win32") {
+    // A tarball packed on Windows carries no executable bits, so `npm run dev`
+    // would die on "permission denied" before Maven ever started.
+    const { mode } = await fs.stat(path.join(project, "server", "mvnw"));
+    assert.ok(mode & 0o111, "mvnw was not executable");
+  }
 });
 
 test("clean up the packed workspace", async () => {

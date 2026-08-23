@@ -50,6 +50,13 @@ function renameDotfile(name: string): string {
   return name;
 }
 
+/**
+ * Files that have to stay runnable. An npm tarball built on Windows carries no
+ * executable bits at all, so the Maven wrapper arrives unusable on macOS and
+ * Linux unless the bit is put back here.
+ */
+const EXECUTABLE_FILES = new Set(["mvnw"]);
+
 async function copyDir(src: string, dest: string): Promise<void> {
   await fs.mkdir(dest, { recursive: true });
   const entries = await fs.readdir(src, { withFileTypes: true });
@@ -61,6 +68,9 @@ async function copyDir(src: string, dest: string): Promise<void> {
       await copyDir(srcPath, destPath);
     } else {
       await fs.copyFile(srcPath, destPath);
+      if (process.platform !== "win32" && EXECUTABLE_FILES.has(destName)) {
+        await fs.chmod(destPath, 0o755);
+      }
     }
   }
 }
