@@ -233,4 +233,4 @@ npm pack --dry-run
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE).
