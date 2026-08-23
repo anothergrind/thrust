@@ -10,7 +10,8 @@
     "build": "tsc",
     "dev": "tsc --watch",
     "pretest": "npm run build",
-    "test": "node --test test/*.test.mjs"
+    "test": "node --test test/*.test.mjs",
+    "smoke": "node scripts/smoke.mjs"
   },
   "files": [
     "dist",

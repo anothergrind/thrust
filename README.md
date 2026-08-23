@@ -212,6 +212,10 @@ Notes for contributors:
 
 - `npm test` builds first, then runs the `node --test` suite in `test/`. The
   tests import from `dist/`, so they cover whatever the CLI actually ships.
+- `npm run smoke` goes further and is slow: it scaffolds a project per stack,
+  installs it, starts `npm run dev`, and checks that `/api/health` answers,
+  that CORS allows the frontend's origin, and that the page renders. Pass
+  `--stack=python` to run just one, `--keep` to inspect the generated project.
 - The CLI only offers stacks whose directory exists under `templates/`, so a
   half-finished template will not appear in the picker.
 - Template files are copied verbatim, then `__PROJECT_NAME__` is replaced
