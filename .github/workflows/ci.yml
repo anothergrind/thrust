@@ -29,12 +29,22 @@ jobs:
       - run: npm test
 
   generate:
-    name: Generate ${{ matrix.stack }}
+    name: Generate ${{ matrix.stack }} + ${{ matrix.frontend }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
+      # Every backend against the default frontend, plus each alternative
+      # frontend against one backend. The frontends differ only in what lands
+      # in client/, so crossing all of them with all backends would spend
+      # runner time re-proving the same seam.
       matrix:
-        stack: [typescript, python, springboot, nextjs]
+        include:
+          - { stack: typescript, frontend: next }
+          - { stack: python, frontend: next }
+          - { stack: springboot, frontend: next }
+          - { stack: nextjs, frontend: next }
+          - { stack: typescript, frontend: svelte }
+          - { stack: typescript, frontend: vue }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -56,5 +66,5 @@ jobs:
       # Scaffolds the stack, installs it, boots `npm run dev`, and asserts
       # /api/health, CORS and the rendered page.
       - name: Smoke test
-        run: npm run smoke -- --stack=${{ matrix.stack }}
+        run: npm run smoke -- --stack=${{ matrix.stack }} --frontend=${{ matrix.frontend }}
         timeout-minutes: 25

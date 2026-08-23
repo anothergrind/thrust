@@ -16,7 +16,8 @@ frontend/backend wiring and jump straight to features.
 
 A ready-to-run project with:
 
-- **Frontend**: Next.js + React + TypeScript + Tailwind CSS
+- **Frontend**: your choice of Next.js (React), SvelteKit, or Vue — all in
+  TypeScript with Tailwind CSS
 - **Backend**: your choice of Express, FastAPI, Spring Boot — or Next.js
   API routes, with no separate backend at all
 - **Glue already wired**: CORS configured, a `GET /api/health` endpoint, the
@@ -97,6 +98,7 @@ or path", so you can type `~/code/my-app` there rather than `cd`-ing first.
 | Flag             | Description                                              |
 | ---------------- | -------------------------------------------------------- |
 | `--stack <name>` | `typescript`, `python`, `springboot`, or `nextjs`. Skips the prompt |
+| `--frontend <name>` | `next`, `svelte`, or `vue`. Defaults to `next`         |
 | `--no-install`   | Skip dependency installation                             |
 | `--no-git`       | Skip git repository initialization                       |
 | `--github`       | Create a GitHub repository and push (requires `gh`)      |
@@ -164,10 +166,28 @@ The page shows a green dot and `API: ok` when the frontend reaches the backend.
 | `springboot` | Spring Boot         | JDK 17+                  |
 | `nextjs`     | Next.js API routes  | —                        |
 
-Every stack ships the identical Next.js + React + Tailwind frontend, exposes the
-same `GET /api/health`, and starts with the same `npm run dev`. The first three
-run the frontend and backend as separate processes wired by environment
-variables; `nextjs` is one app serving both.
+Every stack exposes the same `GET /api/health` and starts with the same
+`npm run dev`. The first three run the frontend and backend as separate
+processes wired by environment variables; `nextjs` is one app serving both.
+
+## Frontends
+
+The three split stacks take any of these, chosen with `--frontend` or at the
+prompt:
+
+| Frontend | Framework            | Client reads          |
+| -------- | -------------------- | --------------------- |
+| `next`   | Next.js (React)      | `NEXT_PUBLIC_API_URL` |
+| `svelte` | SvelteKit            | `PUBLIC_API_URL`      |
+| `vue`    | Vue 3 + Vite         | `VITE_API_URL`        |
+
+All three render the same page, fetch `/api/health` on load, style with
+Tailwind, and run on port 3000 (or `PORT`). Only the variable name differs,
+because each framework exposes its own prefix to browser code — the generated
+`.env.example` and README always name the one your project actually uses.
+
+The `nextjs` stack is a Next.js app by definition, so `--frontend` doesn't
+apply to it.
 
 Stack-specific notes:
 
@@ -176,7 +196,7 @@ Stack-specific notes:
 - **springboot** — the Maven Wrapper (`server/mvnw`) is included, so Maven does
   **not** need to be installed; it is downloaded on first run. The first
   `npm run dev` is slow while Maven fetches the Spring dependency tree.
-- **nextjs** — no `client/`, no `server/`, no CORS and no API URL to configure:
+- **nextjs** — takes no `--frontend`: no `client/`, no `server/`, no CORS and no API URL to configure:
   the page calls `/api/health` on its own origin, and route handlers live in
   `app/api/`. One `npm install`, one process, one port. Pick it when the
   backend is only ever going to serve this frontend; pick one of the others

@@ -1,0 +1,2 @@
+# Client (Next.js exposes only NEXT_PUBLIC_-prefixed variables to browser code)
+NEXT_PUBLIC_API_URL=http://localhost:3001

@@ -1,0 +1,4 @@
+
+# SvelteKit
+client/.svelte-kit/
+client/build/

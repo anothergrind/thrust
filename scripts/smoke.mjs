@@ -11,6 +11,7 @@
  *
  *   node scripts/smoke.mjs                    every stack, one after another
  *   node scripts/smoke.mjs --stack=python     just one
+ *   node scripts/smoke.mjs --frontend=svelte  with a different frontend
  *   node scripts/smoke.mjs --keep             leave the generated project behind
  */
 import { spawn } from "node:child_process";
@@ -18,6 +19,10 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+
+// The CLI's own table of which environment variable each frontend reads its
+// API URL from, so this script can't drift from what it scaffolds.
+import { FRONTEND_DETAILS, stackTakesFrontend } from "../dist/stacks.js";
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const CLI = path.join(REPO, "dist", "index.js");
@@ -55,10 +60,12 @@ const INSTALL_TIMEOUT_MS = {
 
 function parseArgs(argv) {
   const stacks = [];
+  let frontend = "next";
   let keep = false;
   for (const arg of argv) {
     if (arg === "--keep") keep = true;
     else if (arg.startsWith("--stack=")) stacks.push(arg.slice("--stack=".length));
+    else if (arg.startsWith("--frontend=")) frontend = arg.slice("--frontend=".length);
     else throw new Error(`Unknown argument: ${arg}`);
   }
   for (const stack of stacks) {
@@ -66,7 +73,11 @@ function parseArgs(argv) {
       throw new Error(`Unknown stack "${stack}". Choose from: ${ALL_STACKS.join(", ")}`);
     }
   }
-  return { stacks: stacks.length ? stacks : ALL_STACKS, keep };
+  const frontends = Object.keys(FRONTEND_DETAILS);
+  if (!frontends.includes(frontend)) {
+    throw new Error(`Unknown frontend "${frontend}". Choose from: ${frontends.join(", ")}`);
+  }
+  return { stacks: stacks.length ? stacks : ALL_STACKS, frontend, keep };
 }
 
 function log(stack, message) {
@@ -145,6 +156,10 @@ async function until(description, timeoutMs, check) {
   throw new Error(`Timed out waiting for ${description}${detail}`);
 }
 
+/**
+ * Always addressed as "localhost", never 127.0.0.1: Vite binds ::1 only, so
+ * the IPv4 loopback is refused for the Svelte and Nuxt dev servers.
+ */
 function get(url, headers = {}) {
   return fetch(url, { headers, signal: AbortSignal.timeout(5000) });
 }
@@ -161,14 +176,14 @@ function portsFor(stack) {
 }
 
 /** Split stacks only: point the two halves at the ports this run picked. */
-async function writeEnv(project, ports) {
+async function writeEnv(project, ports, frontend) {
   await fs.writeFile(
     path.join(project, "server", ".env"),
     `SERVER_PORT=${ports.server}\nCLIENT_ORIGIN=http://localhost:${ports.client}\n`
   );
   await fs.writeFile(
     path.join(project, "client", ".env"),
-    `NEXT_PUBLIC_API_URL=http://localhost:${ports.server}\n`
+    `${FRONTEND_DETAILS[frontend].apiEnv}=http://localhost:${ports.server}\n`
   );
 }
 
@@ -177,19 +192,23 @@ function assertEqual(actual, expected, what) {
   if (a !== b) throw new Error(`${what}: expected ${b}, got ${a}`);
 }
 
-async function smoke(stack, keep) {
+async function smoke(stack, frontend, keep) {
   const workspace = await fs.mkdtemp(path.join(os.tmpdir(), `thrust-smoke-${stack}-`));
   const project = path.join(workspace, `${stack}-app`);
   const ports = portsFor(stack);
 
-  log(stack, `scaffolding and installing into ${project}`);
-  await runToCompletion(process.execPath, [CLI, project, `--stack=${stack}`, "--no-git"], {
+  const usesFrontend = stackTakesFrontend(stack);
+  const args = [CLI, project, `--stack=${stack}`, "--no-git"];
+  if (usesFrontend) args.push(`--frontend=${frontend}`);
+
+  log(stack, `scaffolding ${usesFrontend ? `with ${frontend} ` : ""}into ${project}`);
+  await runToCompletion(process.execPath, args, {
     cwd: workspace,
     timeout: INSTALL_TIMEOUT_MS[stack],
   });
 
   const split = LAYOUT[stack] === "split";
-  if (split) await writeEnv(project, ports);
+  if (split) await writeEnv(project, ports, frontend);
 
   log(
     stack,
@@ -214,7 +233,7 @@ async function smoke(stack, keep) {
     const health = await Promise.race([
       devExited,
       until("GET /api/health", BOOT_TIMEOUT_MS[stack], async () => {
-        const response = await get(`http://127.0.0.1:${ports.server}/api/health`);
+        const response = await get(`http://localhost:${ports.server}/api/health`);
         if (response.ok) return response.json();
       }),
     ]);
@@ -226,7 +245,7 @@ async function smoke(stack, keep) {
     // API from the page's own origin, where CORS never enters into it.
     if (split) {
       const origin = `http://localhost:${ports.client}`;
-      const cors = await get(`http://127.0.0.1:${ports.server}/api/health`, { Origin: origin });
+      const cors = await get(`http://localhost:${ports.server}/api/health`, { Origin: origin });
       const allowed = cors.headers.get("access-control-allow-origin");
       if (allowed !== origin && allowed !== "*") {
         throw new Error(
@@ -239,7 +258,7 @@ async function smoke(stack, keep) {
     const page = await Promise.race([
       devExited,
       until("the frontend to serve a page", BOOT_TIMEOUT_MS[stack], async () => {
-        const response = await get(`http://127.0.0.1:${ports.client}/`);
+        const response = await get(`http://localhost:${ports.client}/`);
         if (response.ok) return response.text();
       }),
     ]);
@@ -258,11 +277,11 @@ async function smoke(stack, keep) {
   }
 }
 
-const { stacks, keep } = parseArgs(process.argv.slice(2));
+const { stacks, frontend, keep } = parseArgs(process.argv.slice(2));
 
 for (const stack of stacks) {
-  await smoke(stack, keep);
+  await smoke(stack, frontend, keep);
   log(stack, "ok");
 }
 
-console.log(`Smoke tests passed: ${stacks.join(", ")}`);
+console.log(`Smoke tests passed: ${stacks.map((s) => `${s}+${frontend}`).join(", ")}`);

@@ -46,3 +46,29 @@ export function buildNextSteps(
   }
   return steps;
 }
+
+export const FRONTENDS = ["next", "svelte", "vue"] as const;
+export type Frontend = (typeof FRONTENDS)[number];
+
+export const FRONTEND_LABELS: Record<Frontend, string> = {
+  next: "Next.js (React)",
+  svelte: "SvelteKit",
+  vue: "Vue (Vite)",
+};
+
+/**
+ * The two things a generated project has to say about its frontend: how to
+ * describe it, and which environment variable it reads the API URL from. Each
+ * framework only exposes its own prefix to browser code, so that name can't be
+ * shared the way SERVER_PORT and CLIENT_ORIGIN are.
+ */
+export const FRONTEND_DETAILS: Record<Frontend, { label: string; apiEnv: string }> = {
+  next: { label: "Next.js + React + Tailwind CSS", apiEnv: "NEXT_PUBLIC_API_URL" },
+  svelte: { label: "SvelteKit + Tailwind CSS", apiEnv: "PUBLIC_API_URL" },
+  vue: { label: "Vue 3 + Vite + Tailwind CSS", apiEnv: "VITE_API_URL" },
+};
+
+/** The all-in-one stack is a Next.js app by definition; the rest take any frontend. */
+export function stackTakesFrontend(stack: Stack): boolean {
+  return stack !== "nextjs";
+}

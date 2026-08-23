@@ -1,0 +1,2 @@
+# Client (Vite exposes only VITE_-prefixed variables to browser code)
+VITE_API_URL=http://localhost:3001

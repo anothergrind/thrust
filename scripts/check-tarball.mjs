@@ -27,28 +27,44 @@ export const REQUIRED_FILES = [
   "package/README.md",
   "package/LICENSE",
   "package/dist/index.js",
+  "package/dist/stacks.js",
   "package/dist/target.js",
   "package/dist/validate.js",
-  // One entry per template, plus every dotfile the CLI has to restore.
-  "package/templates/typescript/package.json",
-  "package/templates/typescript/_gitignore",
-  "package/templates/typescript/_env.example",
-  "package/templates/typescript/client/_env",
-  "package/templates/typescript/server/_env",
-  "package/templates/python/package.json",
-  "package/templates/python/_gitignore",
-  "package/templates/python/_env.example",
-  "package/templates/python/client/_env",
-  "package/templates/python/server/_env",
-  "package/templates/python/server/requirements.txt",
-  "package/templates/springboot/package.json",
-  "package/templates/springboot/_gitignore",
-  "package/templates/springboot/_env.example",
-  "package/templates/springboot/client/_env",
-  "package/templates/springboot/server/_env",
-  "package/templates/springboot/server/mvnw",
-  "package/templates/springboot/server/mvnw.cmd",
-  "package/templates/springboot/server/_mvn/wrapper/maven-wrapper.properties",
+  // Backends: the root files a project is built from, plus the dotfiles and
+  // wrapper scripts that go missing quietly.
+  "package/templates/backends/typescript/package.json",
+  "package/templates/backends/typescript/_gitignore",
+  "package/templates/backends/typescript/_env.example",
+  "package/templates/backends/typescript/server/_env",
+  "package/templates/backends/python/package.json",
+  "package/templates/backends/python/_gitignore",
+  "package/templates/backends/python/_env.example",
+  "package/templates/backends/python/server/_env",
+  "package/templates/backends/python/server/requirements.txt",
+  "package/templates/backends/python/scripts/py.mjs",
+  "package/templates/backends/springboot/package.json",
+  "package/templates/backends/springboot/_gitignore",
+  "package/templates/backends/springboot/_env.example",
+  "package/templates/backends/springboot/server/_env",
+  "package/templates/backends/springboot/server/mvnw",
+  "package/templates/backends/springboot/server/mvnw.cmd",
+  "package/templates/backends/springboot/server/_mvn/wrapper/maven-wrapper.properties",
+  "package/templates/backends/springboot/scripts/mvn.mjs",
+  // Frontends: each contributes a client/ tree and the two fragments that are
+  // appended to the backend's .env.example and .gitignore.
+  "package/templates/frontends/next/client/package.json",
+  "package/templates/frontends/next/client/_env",
+  "package/templates/frontends/next/_env.example",
+  "package/templates/frontends/next/_gitignore",
+  "package/templates/frontends/svelte/client/package.json",
+  "package/templates/frontends/svelte/client/_env",
+  "package/templates/frontends/svelte/_env.example",
+  "package/templates/frontends/svelte/_gitignore",
+  "package/templates/frontends/vue/client/package.json",
+  "package/templates/frontends/vue/client/_env",
+  "package/templates/frontends/vue/_env.example",
+  "package/templates/frontends/vue/_gitignore",
+  // The all-in-one stack is a whole project rather than two halves.
   "package/templates/nextjs/package.json",
   "package/templates/nextjs/_gitignore",
   "package/templates/nextjs/app/api/health/route.ts",
@@ -107,7 +123,9 @@ function summarise(files) {
   for (const file of files) {
     const parts = file.split("/").slice(1);
     const group =
-      parts[0] === "templates" && parts.length > 1 ? `templates/${parts[1]}` : parts[0];
+      parts[0] === "templates" && parts.length > 2
+        ? parts.slice(0, parts[1] === "nextjs" ? 2 : 3).join("/")
+        : parts[0];
     groups.set(group, (groups.get(group) ?? 0) + 1);
   }
   return [...groups].sort(([a], [b]) => a.localeCompare(b));

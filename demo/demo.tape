@@ -43,6 +43,12 @@ Sleep 2s
 Down
 Sleep 700ms
 Enter
+Sleep 1500ms
+
+# Frontend: move down to SvelteKit, so the recording shows both choices.
+Down
+Sleep 700ms
+Enter
 Sleep 3s
 
 # "Install dependencies now?" — No, so the recording stays short.

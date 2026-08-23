@@ -30,10 +30,15 @@ thrust/
 │   └── check-tarball.mjs  Packs a release and checks its contents
 ├── dist/               Compiled output — generated
 └── templates/
-    ├── typescript/     Express
-    ├── python/         FastAPI
-    ├── springboot/     Spring Boot
-    └── nextjs/         Next.js API routes, no separate backend
+    ├── backends/       Root files + server/ for each backend
+    │   ├── typescript/     Express
+    │   ├── python/         FastAPI
+    │   └── springboot/     Spring Boot
+    ├── frontends/      client/ for each frontend, plus env/gitignore fragments
+    │   ├── next/           Next.js (React)
+    │   ├── svelte/         SvelteKit
+    │   └── vue/            Vue 3 + Vite
+    └── nextjs/         The all-in-one stack: a whole project, not a half
 ```
 
 ## Tests
@@ -49,6 +54,9 @@ target-directory handling, cross-platform path handling, the `--github`
 fallback when the GitHub CLI is missing, and — by packing a real tarball and
 scaffolding from it — that dotfiles survive publication.
 
+`npm run smoke` takes `--frontend=svelte` too, and CI runs every backend
+against Next plus one backend against each alternative frontend.
+
 `npm run smoke` is the slow one: for each stack it scaffolds a project,
 installs it, starts `npm run dev`, and checks that `/api/health` answers, that
 CORS allows the frontend's origin, and that the page renders. `--keep` leaves
@@ -58,8 +66,17 @@ Both run in CI on every push, across Ubuntu and Windows for the unit suite.
 
 ## Working on templates
 
-- The CLI only offers stacks whose directory exists under `templates/`, so a
-  half-finished template will not appear in the picker.
+- A project is assembled from two halves: a backend supplies the root files
+  and `server/`, a frontend supplies `client/`. The CLI only offers halves
+  whose directory exists, so a half-finished template stays out of the picker.
+- `.env.example` and `.gitignore` are the two files neither half owns alone.
+  Each backend and frontend carries a fragment, and the CLI appends the
+  frontend's to the backend's while copying.
+- Text in a template can also carry `__FRONTEND_LABEL__` (how to describe the
+  chosen frontend) and `__CLIENT_API_ENV__` (the variable it reads the API URL
+  from). Both come from `FRONTEND_DETAILS` in `src/stacks.ts`, which is the one
+  place that knows a SvelteKit client reads `PUBLIC_API_URL` and a Vite one
+  reads `VITE_API_URL`.
 - Template files are copied verbatim, then `__PROJECT_NAME__` is replaced
   throughout with the project name. It becomes an npm package name and a Maven
   artifactId, which is why `src/validate.ts` is strict about what it allows.

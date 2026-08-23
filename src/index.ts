@@ -8,6 +8,11 @@ import { fileURLToPath } from "node:url";
 import { projectNameError, projectNameWarnings } from "./validate.js";
 import {
   buildNextSteps,
+  FRONTEND_DETAILS,
+  FRONTEND_LABELS,
+  FRONTENDS,
+  stackTakesFrontend,
+  type Frontend,
   INSTALL_COMMANDS,
   STACK_LABELS,
   STACKS,
@@ -24,12 +29,15 @@ import {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const SENTINEL = "__PROJECT_NAME__";
+const PROJECT_NAME_SENTINEL = "__PROJECT_NAME__";
+const FRONTEND_LABEL_SENTINEL = "__FRONTEND_LABEL__";
+const CLIENT_API_ENV_SENTINEL = "__CLIENT_API_ENV__";
 
 const TEXT_EXTENSIONS = new Set([
   ".json", ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs",
   ".html", ".css", ".md", ".yml", ".yaml", ".toml", ".xml",
   ".env", ".txt", ".py", ".java", ".properties", ".gradle", ".cfg",
+  ".svelte", ".vue",
 ]);
 
 function isTextFile(filename: string): boolean {
@@ -75,17 +83,24 @@ async function copyDir(src: string, dest: string): Promise<void> {
   }
 }
 
-async function replaceInDir(dir: string, projectName: string): Promise<void> {
+async function replaceInDir(
+  dir: string,
+  replacements: Record<string, string>
+): Promise<void> {
   const entries = await fs.readdir(dir, { withFileTypes: true });
   for (const entry of entries) {
     const fullPath = path.join(dir, entry.name);
     if (entry.isDirectory()) {
       if (entry.name === "node_modules") continue;
-      await replaceInDir(fullPath, projectName);
+      await replaceInDir(fullPath, replacements);
     } else if (isTextFile(entry.name)) {
       const content = await fs.readFile(fullPath, "utf-8");
-      if (content.includes(SENTINEL)) {
-        await fs.writeFile(fullPath, content.replaceAll(SENTINEL, projectName), "utf-8");
+      let updated = content;
+      for (const [sentinel, value] of Object.entries(replacements)) {
+        updated = updated.replaceAll(sentinel, value);
+      }
+      if (updated !== content) {
+        await fs.writeFile(fullPath, updated, "utf-8");
       }
     }
   }
@@ -189,33 +204,74 @@ async function createGitHubRepo(
 }
 
 const TEMPLATES_DIR = path.resolve(__dirname, "..", "templates");
+const BACKENDS_DIR = path.join(TEMPLATES_DIR, "backends");
+const FRONTENDS_DIR = path.join(TEMPLATES_DIR, "frontends");
+/** The all-in-one stack is a whole project, not a backend half. */
+const NEXTJS_DIR = path.join(TEMPLATES_DIR, "nextjs");
+
+async function directoriesIn(dir: string): Promise<Set<string>> {
+  try {
+    const entries = await fs.readdir(dir, { withFileTypes: true });
+    return new Set(entries.filter((e) => e.isDirectory()).map((e) => e.name));
+  } catch {
+    return new Set();
+  }
+}
 
 /** Only offer stacks whose template directory actually exists on disk. */
 async function getAvailableStacks(): Promise<Stack[]> {
+  const present = await directoriesIn(BACKENDS_DIR);
   try {
-    const entries = await fs.readdir(TEMPLATES_DIR, { withFileTypes: true });
-    const present = new Set(
-      entries.filter((e) => e.isDirectory()).map((e) => e.name)
-    );
-    return STACKS.filter((s) => present.has(s));
+    await fs.access(NEXTJS_DIR);
+    present.add("nextjs");
   } catch {
-    return [];
+    // The all-in-one template isn't there; just don't offer it.
   }
+  return STACKS.filter((s) => present.has(s));
+}
+
+async function getAvailableFrontends(): Promise<Frontend[]> {
+  const present = await directoriesIn(FRONTENDS_DIR);
+  return FRONTENDS.filter((f) => present.has(f));
+}
+
+/** Adds one half's fragment to a file the other half already wrote. */
+async function appendPart(partPath: string, destPath: string): Promise<void> {
+  const part = await fs.readFile(partPath, "utf-8");
+  await fs.appendFile(destPath, part, "utf-8");
 }
 
 async function scaffold(
   target: string,
   destDir: string,
-  stack: Stack
+  stack: Stack,
+  frontend: Frontend
 ): Promise<void> {
-  const templateDir = path.join(TEMPLATES_DIR, stack);
-
   const spinner = p.spinner();
-  spinner.start(`Copying ${STACK_LABELS[stack]} template...`);
-  await copyDir(templateDir, destDir);
-  // The sentinel becomes an npm package name and the browser tab title, so it
-  // must be the folder name alone — never a path like "../my-app".
-  await replaceInDir(destDir, path.basename(destDir));
+  const description = stackTakesFrontend(stack)
+    ? `${STACK_LABELS[stack]} + ${FRONTEND_LABELS[frontend]}`
+    : STACK_LABELS[stack];
+  spinner.start(`Copying ${description} template...`);
+
+  if (stackTakesFrontend(stack)) {
+    await copyDir(path.join(BACKENDS_DIR, stack), destDir);
+    await copyDir(path.join(FRONTENDS_DIR, frontend, "client"), path.join(destDir, "client"));
+    // .env.example and .gitignore are assembled from both halves: each one
+    // only knows its own variables and its own build directories.
+    await appendPart(path.join(FRONTENDS_DIR, frontend, "_env.example"), path.join(destDir, ".env.example"));
+    await appendPart(path.join(FRONTENDS_DIR, frontend, "_gitignore"), path.join(destDir, ".gitignore"));
+  } else {
+    await copyDir(NEXTJS_DIR, destDir);
+  }
+
+  await replaceInDir(destDir, {
+    // The project name becomes an npm package name and the browser tab title,
+    // so it must be the folder name alone — never a path like "../my-app".
+    [PROJECT_NAME_SENTINEL]: path.basename(destDir),
+    [FRONTEND_LABEL_SENTINEL]: FRONTEND_DETAILS[frontend].label,
+    [CLIENT_API_ENV_SENTINEL]: FRONTEND_DETAILS[frontend].apiEnv,
+  });
+
   spinner.stop(`Template copied to ${target}/`);
 }
 
@@ -294,6 +350,20 @@ async function selectStack(available: Stack[]): Promise<Stack> {
   return stack as Stack;
 }
 
+async function selectFrontend(available: Frontend[]): Promise<Frontend> {
+  const frontend = await p.select({
+    message: "Pick a frontend:",
+    options: available.map((f) => ({ value: f, label: FRONTEND_LABELS[f] })),
+  });
+
+  if (p.isCancel(frontend)) {
+    p.cancel("Cancelled.");
+    process.exit(0);
+  }
+
+  return frontend as Frontend;
+}
+
 async function main(): Promise<void> {
   const program = new Command()
     .name("create-thrust")
@@ -302,6 +372,10 @@ async function main(): Promise<void> {
     .option(
       "--stack <stack>",
       `Backend stack: ${STACKS.join(", ")}`
+    )
+    .option(
+      "--frontend <frontend>",
+      `Frontend framework: ${FRONTENDS.join(", ")} (default: next)`
     )
     .option("--no-install", "Skip dependency installation")
     .option("--no-git", "Skip git repository initialization")
@@ -312,6 +386,7 @@ async function main(): Promise<void> {
   const args = program.args;
   const opts = program.opts<{
     stack?: string;
+    frontend?: string;
     install: boolean;
     git: boolean;
     github?: boolean;
@@ -320,6 +395,7 @@ async function main(): Promise<void> {
 
   const shouldInstall = opts.install;
   const available = await getAvailableStacks();
+  const availableFrontends = await getAvailableFrontends();
 
   if (available.length === 0) {
     console.error(
@@ -332,6 +408,7 @@ async function main(): Promise<void> {
 
   let target: string;
   let stack: Stack;
+  let frontend: Frontend = "next";
 
   if (isNonInteractive) {
     target = args[0];
@@ -353,6 +430,28 @@ async function main(): Promise<void> {
       process.exit(1);
     }
     stack = opts.stack as Stack;
+
+    if (opts.frontend !== undefined) {
+      if (!FRONTENDS.includes(opts.frontend as Frontend)) {
+        console.error(
+          `Unknown frontend "${opts.frontend}". Choose from: ${FRONTENDS.join(", ")}`
+        );
+        process.exit(1);
+      }
+      if (!stackTakesFrontend(stack)) {
+        console.error(
+          `The "${stack}" stack is a Next.js app already, so it has no separate frontend to choose.`
+        );
+        process.exit(1);
+      }
+      if (!availableFrontends.includes(opts.frontend as Frontend)) {
+        console.error(
+          `The "${opts.frontend}" frontend isn't available yet. Ready now: ${availableFrontends.join(", ")}`
+        );
+        process.exit(1);
+      }
+      frontend = opts.frontend as Frontend;
+    }
   } else {
     p.intro("thrust — scaffold a full-stack hackathon project");
     target = args[0] ?? (await promptProjectName());
@@ -364,6 +463,12 @@ async function main(): Promise<void> {
       }
     }
     stack = await selectStack(available);
+
+    // Only asked when there's a choice to make: the all-in-one stack is a
+    // Next.js app, and a lone frontend isn't worth a prompt.
+    if (stackTakesFrontend(stack) && availableFrontends.length > 1) {
+      frontend = await selectFrontend(availableFrontends);
+    }
   }
 
   const destDir = resolveTarget(target);
@@ -402,7 +507,7 @@ async function main(): Promise<void> {
     }
   }
 
-  await scaffold(target, destDir, stack);
+  await scaffold(target, destDir, stack, frontend);
 
   let installed = false;
 
