@@ -7,7 +7,13 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { projectNameError, projectNameWarnings } from "./validate.js";
-import { inspectTarget, targetBlockedMessage } from "./target.js";
+import {
+  inspectTarget,
+  resolveTarget,
+  targetBaseName,
+  targetBlockedMessage,
+  typedBaseName,
+} from "./target.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -249,41 +255,6 @@ function printNextSteps(
   }
 
   p.note(steps.join("\n"), "Next steps");
-}
-
-/**
- * Resolves a target to an absolute directory, expanding a leading "~". The
- * interactive prompt has no shell behind it, so "~/code/app" typed there would
- * otherwise create a folder literally named "~".
- */
-function resolveTarget(value: string): string {
-  let input = value.trim();
-  if (input === "~") {
-    input = os.homedir();
-  } else if (input.startsWith("~/") || input.startsWith("~\\")) {
-    input = path.join(os.homedir(), input.slice(2));
-  }
-  return path.resolve(process.cwd(), input);
-}
-
-/** The last segment of a target as typed, before any path resolution. */
-function typedBaseName(value: string): string {
-  const trimmed = value.trim().replace(/[/\\]+$/, "");
-  return trimmed.split(/[/\\]+/).pop() ?? "";
-}
-
-/**
- * The folder name a target ends in — the part that becomes the project name.
- * Read from the typed segment rather than the resolved path, because resolving
- * normalizes away some of the characters worth complaining about. "~", "." and
- * ".." name a folder only once resolved, so those fall back to the real path.
- */
-function targetBaseName(value: string): string {
-  const typed = typedBaseName(value);
-  if (typed === "" || typed === "~" || typed === "." || typed === "..") {
-    return path.basename(resolveTarget(value));
-  }
-  return typed;
 }
 
 /**
