@@ -7,6 +7,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { projectNameError, projectNameWarnings } from "./validate.js";
+import { inspectTarget, targetBlockedMessage } from "./target.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -207,14 +208,6 @@ async function scaffold(
   stack: Stack
 ): Promise<void> {
   const templateDir = path.join(TEMPLATES_DIR, stack);
-
-  try {
-    await fs.access(destDir);
-    p.log.error(`Directory "${target}" already exists.`);
-    process.exit(1);
-  } catch {
-    // Directory doesn't exist — good
-  }
 
   const spinner = p.spinner();
   spinner.start(`Copying ${STACK_LABELS[stack]} template...`);
@@ -418,6 +411,14 @@ async function main(): Promise<void> {
 
   for (const warning of projectNameWarnings(targetBaseName(target))) {
     p.log.warn(warning);
+  }
+
+  // Checked before anything else is asked, so a doomed run fails on its first
+  // screen rather than after the install and GitHub questions.
+  const blocked = targetBlockedMessage(target, await inspectTarget(destDir));
+  if (blocked) {
+    p.log.error(blocked);
+    process.exit(1);
   }
 
   // A project created inside another repo gets absorbed by it, which is rarely
