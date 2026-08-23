@@ -39,18 +39,18 @@ jobs:
       # runner time re-proving the same seam.
       matrix:
         include:
-          - { stack: typescript, frontend: next, db: none }
-          - { stack: python, frontend: next, db: none }
-          - { stack: springboot, frontend: next, db: none }
-          - { stack: nextjs, frontend: next, db: none }
-          - { stack: typescript, frontend: svelte, db: none }
-          - { stack: typescript, frontend: vue, db: none }
-          # The database layer, on the engine that needs no server running.
-          # Postgres and MySQL differ only in driver and URL.
-          - { stack: typescript, frontend: next, db: sqlite }
-          - { stack: python, frontend: next, db: sqlite }
-          - { stack: springboot, frontend: next, db: sqlite }
-          - { stack: nextjs, frontend: next, db: sqlite }
+          - { stack: typescript, frontend: next, db: none, auth: false }
+          - { stack: python, frontend: next, db: none, auth: false }
+          - { stack: springboot, frontend: next, db: none, auth: false }
+          - { stack: nextjs, frontend: next, db: none, auth: false }
+          - { stack: typescript, frontend: svelte, db: none, auth: false }
+          - { stack: typescript, frontend: vue, db: none, auth: false }
+          # Both optional layers at once, on the database engine that needs no
+          # server running. Postgres and MySQL differ only in driver and URL.
+          - { stack: typescript, frontend: next, db: sqlite, auth: true }
+          - { stack: python, frontend: next, db: sqlite, auth: true }
+          - { stack: springboot, frontend: next, db: sqlite, auth: true }
+          - { stack: nextjs, frontend: next, db: sqlite, auth: true }
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -72,5 +72,10 @@ jobs:
       # Scaffolds the stack, installs it, boots `npm run dev`, and asserts
       # /api/health, CORS and the rendered page.
       - name: Smoke test
-        run: npm run smoke -- --stack=${{ matrix.stack }} --frontend=${{ matrix.frontend }} --db=${{ matrix.db }}
+        run: >-
+          npm run smoke --
+          --stack=${{ matrix.stack }}
+          --frontend=${{ matrix.frontend }}
+          --db=${{ matrix.db }}
+          ${{ matrix.auth && '--auth' || '' }}
         timeout-minutes: 25

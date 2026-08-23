@@ -13,6 +13,7 @@
  *   node scripts/smoke.mjs --stack=python     just one
  *   node scripts/smoke.mjs --frontend=svelte  with a different frontend
  *   node scripts/smoke.mjs --db=sqlite        with the database layer
+ *   node scripts/smoke.mjs --auth             with the auth stub
  *   node scripts/smoke.mjs --keep             leave the generated project behind
  */
 import { spawn } from "node:child_process";
@@ -63,12 +64,14 @@ function parseArgs(argv) {
   const stacks = [];
   let frontend = "next";
   let db = "none";
+  let auth = false;
   let keep = false;
   for (const arg of argv) {
     if (arg === "--keep") keep = true;
     else if (arg.startsWith("--stack=")) stacks.push(arg.slice("--stack=".length));
     else if (arg.startsWith("--frontend=")) frontend = arg.slice("--frontend=".length);
     else if (arg.startsWith("--db=")) db = arg.slice("--db=".length);
+    else if (arg === "--auth") auth = true;
     else throw new Error(`Unknown argument: ${arg}`);
   }
   for (const stack of stacks) {
@@ -80,7 +83,7 @@ function parseArgs(argv) {
   if (!frontends.includes(frontend)) {
     throw new Error(`Unknown frontend "${frontend}". Choose from: ${frontends.join(", ")}`);
   }
-  return { stacks: stacks.length ? stacks : ALL_STACKS, frontend, db, keep };
+  return { stacks: stacks.length ? stacks : ALL_STACKS, frontend, db, auth, keep };
 }
 
 function log(stack, message) {
@@ -211,7 +214,7 @@ function assertEqual(actual, expected, what) {
   if (a !== b) throw new Error(`${what}: expected ${b}, got ${a}`);
 }
 
-async function smoke(stack, frontend, db, keep) {
+async function smoke(stack, frontend, db, auth, keep) {
   const workspace = await fs.mkdtemp(path.join(os.tmpdir(), `thrust-smoke-${stack}-`));
   const project = path.join(workspace, `${stack}-app`);
   const ports = portsFor(stack);
@@ -220,6 +223,7 @@ async function smoke(stack, frontend, db, keep) {
   const args = [CLI, project, `--stack=${stack}`, "--no-git"];
   if (usesFrontend) args.push(`--frontend=${frontend}`);
   if (db !== "none") args.push(`--db=${db}`);
+  if (auth) args.push("--auth");
 
   log(stack, `scaffolding ${usesFrontend ? `with ${frontend} ` : ""}into ${project}`);
   await runToCompletion(process.execPath, args, {
@@ -307,6 +311,41 @@ async function smoke(stack, frontend, db, keep) {
       }
       log(stack, `${db}: POST then GET /api/items round-tripped a row`);
     }
+
+    // The auth stub is the same three endpoints on every stack, so one signup
+    // and one call to a protected route covers all of them.
+    if (auth) {
+      const credentials = { email: `smoke-${Date.now()}@example.com`, password: "correct horse" };
+      const post = (route, body, headers = {}) =>
+        fetch(`http://localhost:${ports.server}/api/auth/${route}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...headers },
+          body: JSON.stringify(body),
+          signal: AbortSignal.timeout(15_000),
+        });
+
+      const signedUp = await post("signup", credentials);
+      if (signedUp.status !== 201) {
+        throw new Error(`${stack}: POST /api/auth/signup answered ${signedUp.status}`);
+      }
+      const { token } = await signedUp.json();
+
+      const me = await get(`http://localhost:${ports.server}/api/auth/me`, {
+        Authorization: `Bearer ${token}`,
+      });
+      const identified = await me.json();
+      if (identified.user?.email !== credentials.email) {
+        throw new Error(`${stack}: /api/auth/me didn't recognise the token it just issued`);
+      }
+
+      const anonymous = await get(`http://localhost:${ports.server}/api/auth/me`);
+      if (anonymous.status !== 401) {
+        throw new Error(
+          `${stack}: /api/auth/me answered ${anonymous.status} without a token, not 401`
+        );
+      }
+      log(stack, "auth: signed up, read /api/auth/me, and was refused without a token");
+    }
   } finally {
     stop(dev);
     await wait(500);
@@ -318,14 +357,14 @@ async function smoke(stack, frontend, db, keep) {
   }
 }
 
-const { stacks, frontend, db, keep } = parseArgs(process.argv.slice(2));
+const { stacks, frontend, db, auth, keep } = parseArgs(process.argv.slice(2));
 
 for (const stack of stacks) {
-  await smoke(stack, frontend, db, keep);
+  await smoke(stack, frontend, db, auth, keep);
   log(stack, "ok");
 }
 
-const suffix = db === "none" ? "" : `+${db}`;
+const suffix = `${db === "none" ? "" : `+${db}`}${auth ? "+auth" : ""}`;
 console.log(
   `Smoke tests passed: ${stacks.map((s) => `${s}+${frontend}${suffix}`).join(", ")}`
 );

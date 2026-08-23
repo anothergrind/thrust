@@ -1,22 +1,54 @@
 /**
- * Applying a chosen database to a freshly copied project: dropping in the
- * layer's files, then editing the handful of files that already exist —
- * a manifest, a requirements list, a pom, an entry point.
+ * Applying an optional layer — a database, an auth stub — to a freshly copied
+ * project: dropping in the layer's files, then editing the handful of files
+ * that already exist: a manifest, a requirements list, a pom, an entry point.
  *
- * Every edit is additive and anchored, so a project scaffolded without a
- * database is byte-for-byte what it always was.
+ * Every edit is additive and anchored to a marker or a known field, so a
+ * project scaffolded without any layers is byte-for-byte what it always was.
  */
 
 import fs from "node:fs/promises";
 import path from "node:path";
 
 import { copyDir, insertAtMarker } from "./copy.js";
-import type { DatabasePlan } from "./databases.js";
 
-export async function applyDatabase(
+/** What applying a layer to a project involves. Every field is optional. */
+export type LayerPlan = {
+  /** Sentinel values only this layer knows about. */
+  replacements?: Record<string, string>;
+  /** Variables for the project's .env, e.g. DATABASE_URL or AUTH_SECRET. */
+  env?: Record<string, string>;
+  /** The comment those variables sit under in .env.example. */
+  envHeading?: string;
+  /** What .env.example should show instead, where a real value is a secret. */
+  envExample?: Record<string, string>;
+  /** package.json fields to merge into the server's (or the app's) manifest. */
+  packageJson?: {
+    path: string;
+    dependencies?: Record<string, string>;
+    devDependencies?: Record<string, string>;
+    scripts?: Record<string, string>;
+  };
+  /** Lines appended to a requirements.txt. */
+  requirements?: { path: string; lines: string[] };
+  /** Maven dependencies inserted at the pom's marker. */
+  maven?: { path: string; dependencies: MavenDependency[] };
+  /** Lines appended to a Spring properties file. */
+  properties?: { path: string; entries: Record<string, string> };
+  /** Import and route registration lines for the backend's entry point. */
+  wiring?: { path: string; imports: string[]; routes: string[] };
+  /** Extra .gitignore entries, e.g. a SQLite file. */
+  gitignore?: string[];
+  /** Appended to the root install command, for setup that can run offline. */
+  installStep?: string;
+};
+
+export type MavenDependency = { groupId: string; artifactId: string; scope?: string };
+
+export async function applyLayer(
   destDir: string,
   templateDir: string,
-  plan: DatabasePlan
+  plan: LayerPlan
 ): Promise<void> {
   await copyDir(templateDir, destDir);
 
@@ -48,7 +80,7 @@ export async function applyDatabase(
  */
 async function mergePackageJson(
   manifestPath: string,
-  additions: NonNullable<DatabasePlan["packageJson"]>
+  additions: NonNullable<LayerPlan["packageJson"]>
 ): Promise<void> {
   const manifest = JSON.parse(await fs.readFile(manifestPath, "utf-8"));
 
@@ -85,7 +117,7 @@ async function appendProperties(
 /** Inserts Maven dependencies at the pom's marker, indented to match. */
 async function insertMavenDependencies(
   pomPath: string,
-  dependencies: { groupId: string; artifactId: string; scope?: string }[]
+  dependencies: MavenDependency[]
 ): Promise<void> {
   const lines: string[] = [];
   for (const dependency of dependencies) {

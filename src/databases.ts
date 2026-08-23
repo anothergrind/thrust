@@ -9,6 +9,7 @@
  * variable name is the same wherever you look.
  */
 
+import type { LayerPlan, MavenDependency } from "./layers.js";
 import type { Stack } from "./stacks.js";
 
 export const DATABASES = ["none", "sqlite", "postgres", "mysql"] as const;
@@ -50,8 +51,6 @@ const SQLALCHEMY: Record<Engine, { url: string; requirements: string[] }> = {
     requirements: ["PyMySQL>=1.1"],
   },
 };
-
-type MavenDependency = { groupId: string; artifactId: string; scope?: string };
 
 /**
  * JDBC settings per engine. SQLite has no Hibernate dialect in the core
@@ -95,33 +94,6 @@ const EXTRA_SQLITE_JAVA: MavenDependency = {
 
 const PRISMA_VERSION = "^6.2.0";
 
-/** What applying a database to a project involves, resolved per stack. */
-export type DatabasePlan = {
-  /** DATABASE_URL for the generated .env, before the project name is filled in. */
-  url: string;
-  /** Sentinel values only this layer knows about. */
-  replacements: Record<string, string>;
-  /** package.json fields to merge into the server's (or the app's) manifest. */
-  packageJson?: {
-    path: string;
-    dependencies?: Record<string, string>;
-    devDependencies?: Record<string, string>;
-    scripts?: Record<string, string>;
-  };
-  /** Lines appended to a requirements.txt. */
-  requirements?: { path: string; lines: string[] };
-  /** Maven dependencies inserted at the pom's marker. */
-  maven?: { path: string; dependencies: MavenDependency[] };
-  /** Lines appended to a Spring properties file. */
-  properties?: { path: string; entries: Record<string, string> };
-  /** Import and route registration lines for the backend's entry point. */
-  wiring?: { path: string; imports: string[]; routes: string[] };
-  /** Extra .gitignore entries, e.g. the SQLite file itself. */
-  gitignore?: string[];
-  /** Appended to the root install command, for setup that can run offline. */
-  installStep?: string;
-};
-
 /**
  * Where each stack's SQLite file actually lands. Prisma resolves a relative
  * url against the schema's directory, while SQLAlchemy and JDBC resolve it
@@ -134,11 +106,12 @@ const SQLITE_IGNORES: Record<Stack, string[]> = {
   springboot: ["", "# Database", "server/dev.db", "server/dev.db-journal"],
 };
 
-export function planDatabase(stack: Stack, engine: Engine): DatabasePlan {
+export function planDatabase(stack: Stack, engine: Engine): LayerPlan {
   switch (stack) {
     case "typescript":
       return {
-        url: PRISMA[engine].url,
+        envHeading: "# Database",
+        env: { DATABASE_URL: PRISMA[engine].url },
         replacements: { __DB_PROVIDER__: PRISMA[engine].provider },
         packageJson: {
           path: "server/package.json",
@@ -162,7 +135,8 @@ export function planDatabase(stack: Stack, engine: Engine): DatabasePlan {
 
     case "nextjs":
       return {
-        url: PRISMA[engine].url,
+        envHeading: "# Database",
+        env: { DATABASE_URL: PRISMA[engine].url },
         replacements: { __DB_PROVIDER__: PRISMA[engine].provider },
         packageJson: {
           path: "package.json",
@@ -180,7 +154,8 @@ export function planDatabase(stack: Stack, engine: Engine): DatabasePlan {
 
     case "python":
       return {
-        url: SQLALCHEMY[engine].url,
+        envHeading: "# Database",
+        env: { DATABASE_URL: SQLALCHEMY[engine].url },
         replacements: { __DB_URL__: SQLALCHEMY[engine].url },
         requirements: {
           path: "server/requirements.txt",
@@ -196,8 +171,8 @@ export function planDatabase(stack: Stack, engine: Engine): DatabasePlan {
 
     case "springboot":
       return {
-        url: JDBC[engine].url,
-        replacements: {},
+        envHeading: "# Database",
+        env: { DATABASE_URL: JDBC[engine].url },
         maven: {
           path: "server/pom.xml",
           dependencies: [

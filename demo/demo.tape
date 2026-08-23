@@ -15,7 +15,7 @@ Require node
 Set Shell bash
 Set FontSize 18
 Set Width 1100
-Set Height 700
+Set Height 820
 Set Padding 30
 Set TypingSpeed 55ms
 Set Theme "Catppuccin Mocha"
@@ -48,6 +48,18 @@ Sleep 1500ms
 # Frontend: move down to SvelteKit, so the recording shows both choices.
 Down
 Sleep 700ms
+Enter
+Sleep 1500ms
+
+# Database: move down to SQLite, the option that needs nothing installed.
+Down
+Sleep 700ms
+Enter
+Sleep 1500ms
+
+# "Add an auth stub?" — Yes. The default is No, so toggle first.
+Left
+Sleep 600ms
 Enter
 Sleep 3s
 

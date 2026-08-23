@@ -25,6 +25,8 @@ A ready-to-run project with:
 - **One command** (`npm run dev`) starts frontend and backend together
 - **Optional database layer** (`--db`) with a model, a client and a worked
   `/api/items` endpoint already in place
+- **Optional auth stub** (`--auth`) — signup, login and a protected route,
+  the same three endpoints whichever backend you picked
 
 ## Running the CLI
 
@@ -102,6 +104,7 @@ or path", so you can type `~/code/my-app` there rather than `cd`-ing first.
 | `--stack <name>` | `typescript`, `python`, `springboot`, or `nextjs`. Skips the prompt |
 | `--frontend <name>` | `next`, `svelte`, or `vue`. Defaults to `next`         |
 | `--db <name>`    | `sqlite`, `postgres`, or `mysql`. Defaults to none        |
+| `--auth`         | Add the signup/login stub                                 |
 | `--no-install`   | Skip dependency installation                             |
 | `--no-git`       | Skip git repository initialization                       |
 | `--github`       | Create a GitHub repository and push (requires `gh`)      |
@@ -235,6 +238,34 @@ SQLite needs nothing installed — the file is created during `npm install`, and
 against a server you point them at; create the schema with
 `npm run db:push --prefix server` (Prisma) once it's reachable, or let
 SQLAlchemy and Hibernate create the tables on first start.
+
+## Auth stub
+
+`--auth` adds three endpoints, identical on every stack:
+
+| Endpoint                | What it does                                     |
+| ----------------------- | ------------------------------------------------ |
+| `POST /api/auth/signup` | Creates an account, returns a token              |
+| `POST /api/auth/login`  | Checks a password, returns a token               |
+| `GET /api/auth/me`      | The signed-in user, or 401 without a valid token |
+
+```bash
+curl -X POST localhost:3001/api/auth/signup   -H 'Content-Type: application/json'   -d '{"email":"you@example.com","password":"correct horse"}'
+
+curl localhost:3001/api/auth/me -H "Authorization: Bearer <token>"
+```
+
+There is no auth library behind it. Passwords are hashed with PBKDF2 (scrypt
+on Node), tokens are HMAC-signed and expiring, comparisons are constant-time —
+all from the standard library of whichever language your backend is in. Each
+project gets its own `AUTH_SECRET`, generated at scaffold time and written to
+`server/.env`, so no two projects sign the same tokens.
+
+**Users are kept in memory**, which means they disappear when the server
+restarts. That is the "stub" part: it exists so a hackathon demo can have
+accounts by lunchtime, and so the shape is already there when you swap the map
+for a table (with `--db`, that is a query in three places) or hand the whole
+thing over to Auth0, Clerk or Supabase Auth.
 
 ## Generated project structure
 

@@ -39,6 +39,7 @@ thrust/
     │   ├── svelte/         SvelteKit
     │   └── vue/            Vue 3 + Vite
     ├── databases/      The opt-in data layer, one fragment per stack
+    ├── auth/           The opt-in auth stub, one implementation per stack
     └── nextjs/         The all-in-one stack: a whole project, not a half
 ```
 
@@ -99,15 +100,21 @@ Both run in CI on every push, across Ubuntu and Windows for the unit suite.
   `target/` directory. The `!templates/**/…` entries in `files` keep that (plus
   `.next/`, `.venv/`, `out/`) out of the published package.
 
-## Working on the database layer
+## Working on the optional layers
 
-`--db` copies `templates/databases/<stack>` over the project and then edits the
-files that already exist. Those edits are described by `planDatabase` in
-`src/databases.ts` — dependencies to merge into a manifest, lines to append to
-`requirements.txt`, Maven dependencies, Spring properties, and the import and
-route lines for the backend's entry point — and carried out by
-`src/database-apply.ts`. Adding an engine usually means adding a row to the
-`PRISMA`, `SQLALCHEMY` and `JDBC` tables, not writing new code.
+`--db` and `--auth` work the same way: copy `templates/<layer>/<stack>` over
+the project, then edit the files that already exist. What to edit is described
+by a `LayerPlan` (`src/layers.ts`) — dependencies to merge into a manifest,
+lines to append to `requirements.txt`, Maven dependencies, Spring properties,
+environment variables, and the import and route lines for the backend's entry
+point. `planDatabase` in `src/databases.ts` and `planAuth` in `src/auth.ts`
+build those plans; `applyLayer` carries them out. Adding a database engine
+usually means adding a row to the `PRISMA`, `SQLALCHEMY` and `JDBC` tables
+rather than writing new code.
+
+A layer that needs a secret should generate it per project, put the real value
+in `.env` and a placeholder in `.env.example` (`envExample` on the plan). No
+generated project should ever ship a secret that another one shares.
 
 Entry points carry `thrust:imports` and `thrust:routes` marker comments so the
 layer knows where its lines go. Anything not used is stripped before the

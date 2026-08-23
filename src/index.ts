@@ -14,7 +14,8 @@ import {
   planDatabase,
   type Database,
 } from "./databases.js";
-import { applyDatabase } from "./database-apply.js";
+import { applyLayer, type LayerPlan } from "./layers.js";
+import { planAuth } from "./auth.js";
 import {
   buildNextSteps,
   FRONTEND_DETAILS,
@@ -145,6 +146,7 @@ const FRONTENDS_DIR = path.join(TEMPLATES_DIR, "frontends");
 /** The all-in-one stack is a whole project, not a backend half. */
 const NEXTJS_DIR = path.join(TEMPLATES_DIR, "nextjs");
 const DATABASES_DIR = path.join(TEMPLATES_DIR, "databases");
+const AUTH_DIR = path.join(TEMPLATES_DIR, "auth");
 
 async function directoriesIn(dir: string): Promise<Set<string>> {
   try {
@@ -183,7 +185,8 @@ async function scaffold(
   destDir: string,
   stack: Stack,
   frontend: Frontend,
-  database: Database
+  database: Database,
+  withAuth: boolean
 ): Promise<string[]> {
   // Setup a database layer can only do once the dependencies are installed.
   const extraInstallSteps: string[] = [];
@@ -191,6 +194,7 @@ async function scaffold(
   const parts = [STACK_LABELS[stack]];
   if (stackTakesFrontend(stack)) parts.push(FRONTEND_LABELS[frontend]);
   if (isEngine(database)) parts.push(DATABASE_LABELS[database].split(" —")[0]);
+  if (withAuth) parts.push("auth");
   spinner.start(`Copying ${parts.join(" + ")} template...`);
 
   if (stackTakesFrontend(stack)) {
@@ -212,12 +216,22 @@ async function scaffold(
     [CLIENT_API_ENV_SENTINEL]: FRONTEND_DETAILS[frontend].apiEnv,
   };
 
+  const layers: { templateDir: string; plan: LayerPlan }[] = [];
   if (isEngine(database)) {
-    const plan = planDatabase(stack, database);
-    await applyDatabase(destDir, path.join(DATABASES_DIR, stack), plan);
-    await writeDatabaseUrl(destDir, stack, plan.url);
-    Object.assign(replacements, plan.replacements);
-    if (plan.installStep) extraInstallSteps.push(plan.installStep);
+    layers.push({
+      templateDir: path.join(DATABASES_DIR, stack),
+      plan: planDatabase(stack, database),
+    });
+  }
+  if (withAuth) {
+    layers.push({ templateDir: path.join(AUTH_DIR, stack), plan: planAuth(stack) });
+  }
+
+  for (const layer of layers) {
+    await applyLayer(destDir, layer.templateDir, layer.plan);
+    await writeEnvEntries(destDir, stack, layer.plan);
+    Object.assign(replacements, layer.plan.replacements);
+    if (layer.plan.installStep) extraInstallSteps.push(layer.plan.installStep);
   }
 
   await replaceInDir(destDir, replacements);
@@ -229,27 +243,42 @@ async function scaffold(
 }
 
 /**
- * DATABASE_URL goes wherever that stack reads its environment from: the
+ * A layer's variables go wherever that stack reads its environment from: the
  * backend's own .env for a split project, the app root for the all-in-one.
+ * The real values go in .env, and .env.example gets whatever is safe to
+ * commit — a generated secret belongs in neither a repository nor a README.
  */
-async function writeDatabaseUrl(
+async function writeEnvEntries(
   destDir: string,
   stack: Stack,
-  url: string
+  plan: LayerPlan
 ): Promise<void> {
-  const line = `DATABASE_URL="${url}"\n`;
-  const example = ["", "# Database", line].join("\n");
+  if (!plan.env) return;
+
+  const format = (values: Record<string, string>) =>
+    Object.entries(values)
+      .map(([key, value]) => `${key}="${value}"`)
+      .join("\n") + "\n";
+
+  const heading = plan.envHeading ? `${plan.envHeading}\n` : "";
+  const real = format(plan.env);
+  const example = `${heading}${format(plan.envExample ?? plan.env)}`;
 
   if (stackTakesFrontend(stack)) {
-    await fs.appendFile(path.join(destDir, "server", ".env"), line, "utf-8");
-    await fs.appendFile(path.join(destDir, ".env.example"), example, "utf-8");
+    await fs.appendFile(path.join(destDir, "server", ".env"), real, "utf-8");
+    await fs.appendFile(path.join(destDir, ".env.example"), `\n${example}`, "utf-8");
     return;
   }
 
-  // The all-in-one app has no .env at all until a database needs one.
-  await fs.writeFile(path.join(destDir, ".env"), line, "utf-8");
-  await fs.writeFile(path.join(destDir, ".env.example"), line, "utf-8");
-  await fs.appendFile(path.join(destDir, ".gitignore"), `\n# Environment\n.env\n!.env.example\n`, "utf-8");
+  // The all-in-one app has no .env at all until a layer needs one.
+  await fs.appendFile(path.join(destDir, ".env"), real, "utf-8");
+  await fs.appendFile(path.join(destDir, ".env.example"), example, "utf-8");
+
+  const gitignorePath = path.join(destDir, ".gitignore");
+  const gitignore = await fs.readFile(gitignorePath, "utf-8");
+  if (!gitignore.includes("\n.env\n")) {
+    await fs.appendFile(gitignorePath, `\n# Environment\n.env\n!.env.example\n`, "utf-8");
+  }
 }
 
 /** Returns true only if every install command succeeded. */
@@ -366,6 +395,21 @@ async function selectDatabase(): Promise<Database> {
   return database as Database;
 }
 
+/** Asked last, because it is the one choice that changes nothing else. */
+async function confirmAuth(): Promise<boolean> {
+  const wanted = await p.confirm({
+    message: "Add an auth stub (signup, login, a protected route)?",
+    initialValue: false,
+  });
+
+  if (p.isCancel(wanted)) {
+    p.cancel("Cancelled.");
+    process.exit(0);
+  }
+
+  return wanted;
+}
+
 async function main(): Promise<void> {
   const program = new Command()
     .name("create-thrust")
@@ -379,6 +423,7 @@ async function main(): Promise<void> {
       "--frontend <frontend>",
       `Frontend framework: ${FRONTENDS.join(", ")} (default: next)`
     )
+    .option("--auth", "Add a signup/login stub with a protected route")
     .option(
       "--db <database>",
       `Database layer: ${DATABASES.join(", ")} (default: none)`
@@ -394,6 +439,7 @@ async function main(): Promise<void> {
     stack?: string;
     frontend?: string;
     db?: string;
+    auth?: boolean;
     install: boolean;
     git: boolean;
     github?: boolean;
@@ -417,6 +463,7 @@ async function main(): Promise<void> {
   let stack: Stack;
   let frontend: Frontend = "next";
   let database: Database = "none";
+  let withAuth = false;
 
   if (isNonInteractive) {
     target = args[0];
@@ -470,6 +517,8 @@ async function main(): Promise<void> {
       }
       database = opts.db as Database;
     }
+
+    withAuth = opts.auth === true;
   } else {
     p.intro("thrust — scaffold a full-stack hackathon project");
     target = args[0] ?? (await promptProjectName());
@@ -489,6 +538,7 @@ async function main(): Promise<void> {
     }
 
     database = await selectDatabase();
+    withAuth = opts.auth === true || (await confirmAuth());
   }
 
   const destDir = resolveTarget(target);
@@ -527,7 +577,14 @@ async function main(): Promise<void> {
     }
   }
 
-  const extraInstallSteps = await scaffold(target, destDir, stack, frontend, database);
+  const extraInstallSteps = await scaffold(
+    target,
+    destDir,
+    stack,
+    frontend,
+    database,
+    withAuth
+  );
 
   let installed = false;
 
