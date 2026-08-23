@@ -19,6 +19,10 @@
     "templates",
     "!templates/**/target",
     "!templates/**/.next",
+    "!templates/**/.svelte-kit",
+    "!templates/**/.nuxt",
+    "!templates/**/.output",
+    "!templates/**/dist",
     "!templates/**/out",
     "!templates/**/.venv",
     "!templates/**/__pycache__"

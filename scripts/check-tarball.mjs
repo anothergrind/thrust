@@ -96,8 +96,12 @@ export const REQUIRED_FILES = [
   "package/templates/nextjs/app/api/health/route.ts",
 ];
 
-/** Build output and installed dependencies that must never ship. */
-const FORBIDDEN = /\/(target|\.next|out|\.venv|__pycache__|node_modules)\//;
+/**
+ * Build output and installed dependencies that must never ship. Scoped to
+ * templates: the package's own dist/ is exactly what it exists to publish.
+ */
+const FORBIDDEN =
+  /^package\/templates\/.*\/(target|\.next|\.nuxt|\.output|\.svelte-kit|out|dist|\.venv|__pycache__|node_modules)\//;
 
 /**
  * npm drops dotfiles from tarballs, which is the whole reason the templates
