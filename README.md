@@ -204,50 +204,12 @@ without editing anything.
 Next.js only exposes `NEXT_PUBLIC_`-prefixed variables to browser code and
 inlines them at build time, so restart the dev server after changing one.
 
-## Repository layout
+## Contributing
 
-```
-thrust/
-├── src/index.ts     CLI source
-├── src/validate.ts  Project-name rules
-├── dist/            Compiled output — generated, and the npm bin entry point
-├── test/            Unit tests, run against dist/ with `npm test`
-└── templates/
-    ├── typescript/  Express
-    ├── python/      FastAPI
-    └── springboot/  Spring Boot
-```
-
-Notes for contributors:
-
-- `npm test` builds first, then runs the `node --test` suite in `test/`. The
-  tests import from `dist/`, so they cover whatever the CLI actually ships.
-- `npm run smoke` goes further and is slow: it scaffolds a project per stack,
-  installs it, starts `npm run dev`, and checks that `/api/health` answers,
-  that CORS allows the frontend's origin, and that the page renders. Pass
-  `--stack=python` to run just one, `--keep` to inspect the generated project.
-- The CLI only offers stacks whose directory exists under `templates/`, so a
-  half-finished template will not appear in the picker.
-- Template files are copied verbatim, then `__PROJECT_NAME__` is replaced
-  throughout with the project name.
-- npm strips dotfiles from published tarballs, so templates store them with a
-  leading underscore (`_env`, `_gitignore`, `_mvn`) and the CLI restores the
-  real names while copying. Add new dotfiles the same way, or they will be
-  missing for anyone who installs from npm.
-- Build output can appear inside `templates/` on its own — an IDE Java
-  extension will happily compile `templates/springboot/server/pom.xml` into a
-  `target/` directory. The `!templates/**/…` entries in `files` keep that (plus
-  `.next/`, `.venv/`, `out/`) out of the published package.
-
-Check what would actually ship before publishing:
-
-```bash
-npm run release:check
-```
-
-That packs a real tarball, prints what it contains, and fails if a required
-file is missing, a dotfile slipped in under its real name, or build output
-crept in. [RELEASING.md](RELEASING.md) has the full checklist.
+The CLI lives in `src/`, the project templates in `templates/`, and both have
+tests that run on every push. [CONTRIBUTING.md](CONTRIBUTING.md) covers the
+layout, how to run the fast and slow test suites, and the rules a new template
+has to follow. [RELEASING.md](RELEASING.md) covers publishing.
 
 ## License
 
