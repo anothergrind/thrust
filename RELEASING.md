@@ -53,6 +53,25 @@ That last step is the only check that covers the published artifact end to
 end — the registry copy, the bin entry, the restored dotfiles and the
 generated project actually booting.
 
+## Repository metadata
+
+GitHub's description and topics are what people see before the README, and
+they live in repository settings rather than in the tree — so the current
+values are recorded here, and re-applying them is one command:
+
+```bash
+gh repo edit anothergrind/thrust \
+  --description "CLI that scaffolds a full-stack hackathon project in one command: Next.js frontend wired to an Express, FastAPI, or Spring Boot backend." \
+  --add-topic cli --add-topic scaffolding --add-topic hackathon \
+  --add-topic fullstack --add-topic project-generator --add-topic nextjs \
+  --add-topic react --add-topic express --add-topic fastapi \
+  --add-topic spring-boot --add-topic typescript --add-topic python \
+  --add-topic java --add-topic npm-package --add-topic boilerplate
+```
+
+Keep it in step with the stacks the CLI actually offers: a new backend or
+frontend option belongs in both the description and the topics.
+
 ## Adding a template file
 
 Two rules keep releases honest:
