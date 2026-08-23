@@ -54,6 +54,26 @@ created for you, so `code/2026/my-app` works even if none of it exists yet.
 Only the final folder name becomes the project name, so `../my-app` still
 produces a project called `my-app`.
 
+### Project name rules
+
+That final folder name is written into `package.json`, `pom.xml` and the
+browser tab title of the generated project, so it has to work as a package name
+as well as a folder name. The CLI checks it before copying anything and, where
+it can, suggests a name that would work:
+
+- Letters, numbers, dots, hyphens and underscores only
+- Can't start with a dot or underscore, or end with a dot
+- At most 207 characters — npm's limit is 214, and the generated packages add
+  `-client` and `-server`
+- Not `node_modules` or `favicon.ico`, which npm reserves
+- Not a Windows device name (`con`, `nul`, `com1`, `lpt9`, …), which Windows
+  refuses to create a folder for. These are rejected on every platform so a
+  project stays usable across a team.
+
+Uppercase letters and Node core module names (`http`, `stream`, …) are warned
+about but allowed: generated projects are private, so those only matter if you
+publish one.
+
 The interactive prompt accepts all the same forms — it asks for a "project name
 or path", so you can type `~/code/my-app` there rather than `cd`-ing first.
 
@@ -178,8 +198,10 @@ inlines them at build time, so restart the dev server after changing one.
 
 ```
 thrust/
-├── src/index.ts     CLI source (the only place to edit)
+├── src/index.ts     CLI source
+├── src/validate.ts  Project-name rules
 ├── dist/            Compiled output — generated, and the npm bin entry point
+├── test/            Unit tests, run against dist/ with `npm test`
 └── templates/
     ├── typescript/  Express
     ├── python/      FastAPI
@@ -188,6 +210,8 @@ thrust/
 
 Notes for contributors:
 
+- `npm test` builds first, then runs the `node --test` suite in `test/`. The
+  tests import from `dist/`, so they cover whatever the CLI actually ships.
 - The CLI only offers stacks whose directory exists under `templates/`, so a
   half-finished template will not appear in the picker.
 - Template files are copied verbatim, then `__PROJECT_NAME__` is replaced

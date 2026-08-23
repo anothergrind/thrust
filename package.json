@@ -8,7 +8,9 @@
   },
   "scripts": {
     "build": "tsc",
-    "dev": "tsc --watch"
+    "dev": "tsc --watch",
+    "pretest": "npm run build",
+    "test": "node --test test/*.test.mjs"
   },
   "files": [
     "dist",

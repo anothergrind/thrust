@@ -6,6 +6,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { projectNameError, projectNameWarnings } from "./validate.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -272,6 +273,26 @@ function resolveTarget(value: string): string {
   return path.resolve(process.cwd(), input);
 }
 
+/** The last segment of a target as typed, before any path resolution. */
+function typedBaseName(value: string): string {
+  const trimmed = value.trim().replace(/[/\\]+$/, "");
+  return trimmed.split(/[/\\]+/).pop() ?? "";
+}
+
+/**
+ * The folder name a target ends in — the part that becomes the project name.
+ * Read from the typed segment rather than the resolved path, because resolving
+ * normalizes away some of the characters worth complaining about. "~", "." and
+ * ".." name a folder only once resolved, so those fall back to the real path.
+ */
+function targetBaseName(value: string): string {
+  const typed = typedBaseName(value);
+  if (typed === "" || typed === "~" || typed === "." || typed === "..") {
+    return path.basename(resolveTarget(value));
+  }
+  return typed;
+}
+
 /**
  * Accepts either a bare name ("my-app") or a path ("../my-app", "~/code/app"),
  * so a project can be created outside the current directory. Only the final
@@ -279,12 +300,17 @@ function resolveTarget(value: string): string {
  */
 function validateTarget(value: string): string | undefined {
   if (!value.trim()) return "Project name is required.";
-  const base = path.basename(resolveTarget(value));
-  if (!/^[a-zA-Z0-9._-]+$/.test(base))
-    return "The final folder name may use only letters, numbers, dots, hyphens, and underscores.";
-  if (/^[._]/.test(base))
-    return "The final folder name can't start with a dot or underscore.";
-  return undefined;
+  const base = targetBaseName(value);
+  if (!base) {
+    return "That path doesn't end in a folder name — add one, like ~/code/my-app.";
+  }
+  const error = projectNameError(base);
+  if (!error) return undefined;
+  // "." and ".." borrow their name from a folder the user never typed, so say
+  // which one the complaint is about.
+  return typedBaseName(value) === base
+    ? error
+    : `"${value.trim()}" points at a folder called "${base}". ${error}`;
 }
 
 async function promptProjectName(): Promise<string> {
@@ -389,6 +415,10 @@ async function main(): Promise<void> {
   }
 
   const destDir = resolveTarget(target);
+
+  for (const warning of projectNameWarnings(targetBaseName(target))) {
+    p.log.warn(warning);
+  }
 
   // A project created inside another repo gets absorbed by it, which is rarely
   // what anyone wants — surface it before writing any files.
