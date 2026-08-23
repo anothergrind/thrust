@@ -20,15 +20,26 @@ strips those on publish, which is why templates store them as `_env`,
 Its output is worth reading, not just its exit code:
 
 ```
-create-thrust-0.1.0.tgz — 74 files, 41 KB packed, 132 KB unpacked
-
-    12  dist
+create-thrust-0.1.0.tgz — 123 files, 56 KB packed, 198 KB unpacked
+    27  dist
      1  LICENSE
      1  package.json
      1  README.md
-    17  templates/python
-    23  templates/springboot
-    17  templates/typescript
+     4  templates/auth/nextjs
+     1  templates/auth/python
+     2  templates/auth/springboot
+     1  templates/auth/typescript
+     8  templates/backends/python
+    14  templates/backends/springboot
+     8  templates/backends/typescript
+     3  templates/databases/nextjs
+     3  templates/databases/python
+     3  templates/databases/springboot
+     3  templates/databases/typescript
+    11  templates/frontends/next
+    11  templates/frontends/svelte
+    10  templates/frontends/vue
+    11  templates/nextjs
 ```
 
 A stack whose file count suddenly drops is a template that stopped shipping.

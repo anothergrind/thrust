@@ -271,8 +271,15 @@ async function writeEnvEntries(
   }
 
   // The all-in-one app has no .env at all until a layer needs one.
+  const started = await fs
+    .readFile(path.join(destDir, ".env.example"), "utf-8")
+    .catch(() => "");
   await fs.appendFile(path.join(destDir, ".env"), real, "utf-8");
-  await fs.appendFile(path.join(destDir, ".env.example"), example, "utf-8");
+  await fs.appendFile(
+    path.join(destDir, ".env.example"),
+    started === "" ? example : `\n${example}`,
+    "utf-8"
+  );
 
   const gitignorePath = path.join(destDir, ".gitignore");
   const gitignore = await fs.readFile(gitignorePath, "utf-8");
@@ -520,6 +527,18 @@ async function main(): Promise<void> {
 
     withAuth = opts.auth === true;
   } else {
+    // The prompts need a real terminal. Without this the first prompt throws
+    // ERR_TTY_INIT_FAILED and the user gets a Node stack trace instead of a
+    // hint — which is what happens in CI, in a Docker build, or behind a pipe.
+    if (!process.stdin.isTTY) {
+      console.error(
+        "The prompts need an interactive terminal." +
+          `\nPass a name and a stack to skip them, e.g. create-thrust my-app --stack=${STACKS[0]}` +
+          "\nRun with --help to see every option."
+      );
+      process.exit(1);
+    }
+
     p.intro("thrust — scaffold a full-stack hackathon project");
     target = args[0] ?? (await promptProjectName());
     if (args[0]) {
