@@ -78,6 +78,8 @@ export const REQUIRED_FILES = [
   "package/templates/databases/springboot/server/src/main/java/com/example/app/Item.java",
   "package/templates/databases/springboot/server/src/main/java/com/example/app/ItemRepository.java",
   "package/templates/databases/springboot/server/src/main/java/com/example/app/ItemController.java",
+  "package/templates/databases/engines/postgres/docker-compose.yml",
+  "package/templates/databases/engines/mysql/docker-compose.yml",
   "package/templates/databases/nextjs/prisma/schema.prisma",
   "package/templates/databases/nextjs/lib/db.ts",
   "package/templates/databases/nextjs/app/api/items/route.ts",

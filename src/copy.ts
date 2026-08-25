@@ -56,18 +56,64 @@ export async function copyDir(src: string, dest: string): Promise<void> {
   }
 }
 
+function substitute(text: string, replacements: Record<string, string>): string {
+  let updated = text;
+  for (const [sentinel, value] of Object.entries(replacements)) {
+    updated = updated.replaceAll(sentinel, value);
+  }
+  return updated;
+}
+
+/**
+ * Expands the replacement values against each other, so that a value which
+ * itself contains a sentinel — a database URL carries the project name — is
+ * resolved before any file is touched.
+ *
+ * Without this the sweep is order-dependent: `__PROJECT_NAME__` is replaced
+ * first, then `__DB_URL__` drops a fresh `__PROJECT_NAME__` into the file that
+ * nothing will ever come back for, and the sentinel ships in someone's source.
+ */
+export function resolveReplacements(
+  replacements: Record<string, string>
+): Record<string, string> {
+  const resolved = { ...replacements };
+  const sentinels = Object.keys(resolved);
+
+  // Each pass resolves one more level of nesting, so a chain of n sentinels
+  // settles in at most n passes.
+  for (let pass = 0; pass < sentinels.length; pass++) {
+    let changed = false;
+    for (const sentinel of sentinels) {
+      const expanded = substitute(resolved[sentinel], resolved);
+      if (expanded !== resolved[sentinel]) {
+        resolved[sentinel] = expanded;
+        changed = true;
+      }
+    }
+    if (!changed) break;
+  }
+
+  // A sentinel that survives its own expansion is one that refers to itself,
+  // directly or through another. Saying so is better than the alternative:
+  // quietly writing the sentinel into the project, which is the bug this
+  // whole function exists to prevent.
+  const cyclic = sentinels.filter((sentinel) =>
+    sentinels.some((other) => resolved[sentinel].includes(other))
+  );
+  if (cyclic.length > 0) {
+    throw new Error(`Sentinel values refer to each other in a cycle: ${cyclic.join(", ")}`);
+  }
+
+  return resolved;
+}
+
 /** Rewrites every text file under `dir`, applying all sentinel replacements. */
 export async function replaceInDir(
   dir: string,
   replacements: Record<string, string>
 ): Promise<void> {
-  await eachTextFile(dir, async (filePath, content) => {
-    let updated = content;
-    for (const [sentinel, value] of Object.entries(replacements)) {
-      updated = updated.replaceAll(sentinel, value);
-    }
-    return updated;
-  });
+  const resolved = resolveReplacements(replacements);
+  await eachTextFile(dir, async (_filePath, content) => substitute(content, resolved));
 }
 
 /**

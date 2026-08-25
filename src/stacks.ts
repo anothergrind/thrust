@@ -30,17 +30,26 @@ export const DEV_COMMANDS: Record<Stack, string> = {
  * pushing can fail to happen — gh missing, gh unauthenticated, the user
  * declining, or the repo creation itself failing — so a project with commits
  * and no remote always says how to add one.
+ *
+ * `manualSteps` are the commands a layer could not run for the user — pushing
+ * a schema to a database server that wasn't up yet — and they go between the
+ * install and `npm run dev`, which is when they have to happen. Each carries
+ * its reason as a trailing comment, so the line can still be pasted whole.
  */
 export function buildNextSteps(
   target: string,
   stack: Stack,
   alreadyInstalled: boolean,
   needsRemote: boolean,
-  extraInstallSteps: string[] = []
+  extraInstallSteps: string[] = [],
+  manualSteps: { command: string; reason: string }[] = []
 ): string[] {
   const steps = [`cd ${target}`];
   if (!alreadyInstalled) {
     steps.push([...INSTALL_COMMANDS[stack], ...extraInstallSteps].join(" && "));
+  }
+  for (const { command, reason } of manualSteps) {
+    steps.push(`${command}   # ${reason}`);
   }
   steps.push(DEV_COMMANDS[stack]);
   if (needsRemote) {

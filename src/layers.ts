@@ -39,8 +39,20 @@ export type LayerPlan = {
   wiring?: { path: string; imports: string[]; routes: string[] };
   /** Extra .gitignore entries, e.g. a SQLite file. */
   gitignore?: string[];
+  /**
+   * A section appended to the project's README. The CLI prints a layer's
+   * commands once, to whoever ran it; the README is where the rest of the
+   * team, and that same person on Monday, will look for them.
+   */
+  readme?: { path: string; lines: string[] };
   /** Appended to the root install command, for setup that can run offline. */
   installStep?: string;
+  /**
+   * Setup that needs something the install can't assume is there — a database
+   * server, in practice. Printed in the next steps with its reason, never run,
+   * because a failure here would look like a failed install.
+   */
+  manualStep?: { command: string; reason: string };
 };
 
 export type MavenDependency = { groupId: string; artifactId: string; scope?: string };
@@ -71,6 +83,9 @@ export async function applyLayer(
   }
   if (plan.gitignore) {
     await appendLines(path.join(destDir, ".gitignore"), plan.gitignore);
+  }
+  if (plan.readme) {
+    await appendLines(path.join(destDir, plan.readme.path), plan.readme.lines);
   }
 }
 

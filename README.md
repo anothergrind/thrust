@@ -23,8 +23,9 @@ A ready-to-run project with:
 - **Glue already wired**: CORS configured, a `GET /api/health` endpoint, the
   frontend fetching it on load, and `.env` files with matching variable names
 - **One command** (`npm run dev`) starts frontend and backend together
-- **Optional database layer** (`--db`) with a model, a client and a worked
-  `/api/items` endpoint already in place
+- **Optional database layer** (`--db`) with a model, a client, a worked
+  `/api/items` endpoint, and — for Postgres and MySQL — the server itself,
+  one `npm run db:up` away
 - **Optional auth stub** (`--auth`) — signup, login and a protected route,
   the same three endpoints whichever backend you picked
 
@@ -234,10 +235,31 @@ npm create thrust@latest my-app -- --stack=typescript --db=sqlite
 ```
 
 SQLite needs nothing installed — the file is created during `npm install`, and
-`npm run dev` works immediately. `postgres` and `mysql` scaffold the same code
-against a server you point them at; create the schema with
-`npm run db:push --prefix server` (Prisma) once it's reachable, or let
-SQLAlchemy and Hibernate create the tables on first start.
+`npm run dev` works immediately.
+
+`postgres` and `mysql` bring the server too, so choosing one isn't a homework
+assignment. The project gets a `docker-compose.yml` describing the very
+database its `DATABASE_URL` points at — same user, same password, same name —
+and two scripts to drive it:
+
+```bash
+npm run db:up      # starts it, and waits until it accepts connections
+npm run db:down    # stops it, keeping your data
+```
+
+Docker is what that needs, and it is the only thing that needs it. Point
+`DATABASE_URL` at a hosted database from Supabase, Neon or RDS instead and the
+compose file is just a file you never open. On `springboot` that URL keeps its
+`jdbc:` prefix and carries no credentials — those go in `DATABASE_USER` and
+`DATABASE_PASSWORD`, written into the same `.env` beside it.
+
+Whether anything else has to happen before `npm run dev` depends on the ORM,
+and the CLI prints the step when there is one:
+
+| Stack                   | Before the first run                                    |
+| ----------------------- | ------------------------------------------------------- |
+| `typescript` / `nextjs` | `npm run db:push` — Prisma creates the tables on request |
+| `python` / `springboot` | nothing — SQLAlchemy and Hibernate create them on start  |
 
 ## Auth stub
 

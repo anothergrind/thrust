@@ -11,7 +11,7 @@ import {
   DATABASE_LABELS,
   DATABASES,
   isEngine,
-  planDatabase,
+  planDatabaseLayers,
   type Database,
 } from "./databases.js";
 import { applyLayer, type LayerPlan } from "./layers.js";
@@ -180,6 +180,12 @@ async function appendPart(partPath: string, destPath: string): Promise<void> {
   await fs.appendFile(destPath, part, "utf-8");
 }
 
+/** The setup a layer leaves behind: what the install can run, and what it can't. */
+type ExtraSteps = {
+  install: string[];
+  manual: { command: string; reason: string }[];
+};
+
 async function scaffold(
   target: string,
   destDir: string,
@@ -187,9 +193,10 @@ async function scaffold(
   frontend: Frontend,
   database: Database,
   withAuth: boolean
-): Promise<string[]> {
-  // Setup a database layer can only do once the dependencies are installed.
-  const extraInstallSteps: string[] = [];
+): Promise<ExtraSteps> {
+  // Setup a database layer can only do once the dependencies are installed,
+  // and setup no install can do at all because it needs a server running.
+  const extra: ExtraSteps = { install: [], manual: [] };
   const spinner = p.spinner();
   const parts = [STACK_LABELS[stack]];
   if (stackTakesFrontend(stack)) parts.push(FRONTEND_LABELS[frontend]);
@@ -218,10 +225,9 @@ async function scaffold(
 
   const layers: { templateDir: string; plan: LayerPlan }[] = [];
   if (isEngine(database)) {
-    layers.push({
-      templateDir: path.join(DATABASES_DIR, stack),
-      plan: planDatabase(stack, database),
-    });
+    for (const layer of planDatabaseLayers(stack, database)) {
+      layers.push({ templateDir: path.join(DATABASES_DIR, layer.template), plan: layer.plan });
+    }
   }
   if (withAuth) {
     layers.push({ templateDir: path.join(AUTH_DIR, stack), plan: planAuth(stack) });
@@ -231,7 +237,8 @@ async function scaffold(
     await applyLayer(destDir, layer.templateDir, layer.plan);
     await writeEnvEntries(destDir, stack, layer.plan);
     Object.assign(replacements, layer.plan.replacements);
-    if (layer.plan.installStep) extraInstallSteps.push(layer.plan.installStep);
+    if (layer.plan.installStep) extra.install.push(layer.plan.installStep);
+    if (layer.plan.manualStep) extra.manual.push(layer.plan.manualStep);
   }
 
   await replaceInDir(destDir, replacements);
@@ -239,7 +246,7 @@ async function scaffold(
   await stripMarkers(destDir);
 
   spinner.stop(`Template copied to ${target}/`);
-  return extraInstallSteps;
+  return extra;
 }
 
 /**
@@ -313,14 +320,15 @@ function printNextSteps(
   stack: Stack,
   alreadyInstalled: boolean,
   needsRemote: boolean,
-  extraInstallSteps: string[]
+  extra: ExtraSteps
 ): void {
   const steps = buildNextSteps(
     target,
     stack,
     alreadyInstalled,
     needsRemote,
-    extraInstallSteps
+    extra.install,
+    extra.manual
   );
   p.note(steps.join("\n"), "Next steps");
 }
@@ -596,14 +604,7 @@ async function main(): Promise<void> {
     }
   }
 
-  const extraInstallSteps = await scaffold(
-    target,
-    destDir,
-    stack,
-    frontend,
-    database,
-    withAuth
-  );
+  const extraSteps = await scaffold(target, destDir, stack, frontend, database, withAuth);
 
   let installed = false;
 
@@ -616,7 +617,7 @@ async function main(): Promise<void> {
       process.exit(0);
     }
     if (doInstall) {
-      installed = await runInstall(destDir, stack, extraInstallSteps);
+      installed = await runInstall(destDir, stack, extraSteps.install);
     }
   }
 
@@ -690,7 +691,7 @@ async function main(): Promise<void> {
     }
   }
 
-  printNextSteps(target, stack, installed, committed && !pushed, extraInstallSteps);
+  printNextSteps(target, stack, installed, committed && !pushed, extraSteps);
   p.outro("Happy hacking!");
 }
 

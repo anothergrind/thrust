@@ -4,9 +4,12 @@ import uvicorn
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-# thrust:imports
 
+# Loaded above the imports that follow it, not below: an optional layer reads
+# the environment as its module is imported — a database layer builds its
+# engine right there — and would otherwise see .env as if it were empty.
 load_dotenv()
+# thrust:imports
 
 SERVER_PORT = int(os.getenv("SERVER_PORT", "3001"))
 CLIENT_ORIGIN = os.getenv("CLIENT_ORIGIN", "http://localhost:3000")

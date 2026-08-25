@@ -116,13 +116,49 @@ A layer that needs a secret should generate it per project, put the real value
 in `.env` and a placeholder in `.env.example` (`envExample` on the plan). No
 generated project should ever ship a secret that another one shares.
 
+A layer that adds commands should also add a `readme` section explaining them.
+The next steps the CLI prints are seen once, by one person; everyone who clones
+the repository afterwards has the project's own README and nothing else.
+
 Entry points carry `thrust:imports` and `thrust:routes` marker comments so the
 layer knows where its lines go. Anything not used is stripped before the
 project is finished, so a project scaffolded without a database has no trace of
 the mechanism.
 
-Only SQLite is booted in CI: Postgres and MySQL differ from it by a driver and
-a URL, and standing servers up per job would cost more than it proves.
+A layer's module reads the environment as it is imported — `db.py` builds its
+engine at module scope — so anything that loads `.env` has to run above the
+`thrust:imports` marker, not below it. `load_dotenv()` in the FastAPI entry
+point and `import "dotenv/config"` in the Express one both sit there for that
+reason.
+
+Sentinels like `__PROJECT_NAME__` are filled in by one sweep at the end of
+`scaffold`, and a plan's `replacements` can contain them too — every Postgres
+and MySQL URL carries the project name. `resolveReplacements` expands the
+values against each other before that sweep so the order of the map can't
+matter, and refuses a cycle rather than leaving a sentinel in the project.
+
+A layer's setup goes in one of two places. `installStep` is appended to the
+install command and has to succeed offline; `manualStep` is printed in the next
+steps with its reason and never run, which is where anything needing a database
+server belongs — a failed schema push during install reads as a failed install.
+The smoke script runs whatever `manualStep` the plan carries, so there is one
+definition of that step rather than two.
+
+`--db=postgres` and `--db=mysql` are applied as two layers rather than one:
+`templates/databases/engines/<engine>` carries the compose file that runs the
+server, and `templates/databases/<stack>` carries the code that talks to it.
+`planDatabaseLayers` returns both in the order they have to happen, and is what
+the smoke script reads too — so "start the database, then push the schema" has
+one definition rather than one per caller.
+
+CI boots SQLite in the `generate` job and Postgres and MySQL in the `database`
+job. Neither uses service containers: the smoke script runs the project's own
+`npm run db:up`, so the compose file a developer is handed is the one under
+test. Locally it is the same command, and it needs Docker:
+
+```bash
+npm run smoke -- --stack=typescript --db=postgres
+```
 
 After a template change, `npm run release:check` shows what would actually
 ship. [RELEASING.md](RELEASING.md) covers the rest of the release flow.

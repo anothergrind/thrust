@@ -13,6 +13,9 @@
  *   node scripts/smoke.mjs --stack=python     just one
  *   node scripts/smoke.mjs --frontend=svelte  with a different frontend
  *   node scripts/smoke.mjs --db=sqlite        with the database layer
+ *   node scripts/smoke.mjs --db=postgres      needs a server on the scaffolded
+ *                                             URL, with a database named after
+ *                                             the project ("<stack>-app")
  *   node scripts/smoke.mjs --auth             with the auth stub
  *   node scripts/smoke.mjs --keep             leave the generated project behind
  */
@@ -22,9 +25,11 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-// The CLI's own table of which environment variable each frontend reads its
-// API URL from, so this script can't drift from what it scaffolds.
+// The CLI's own tables, so this script can't drift from what it scaffolds:
+// which environment variable each frontend reads its API URL from, and which
+// setup step a database layer leaves for the developer to run.
 import { FRONTEND_DETAILS, stackTakesFrontend } from "../dist/stacks.js";
+import { DATABASES, isEngine, planDatabaseLayers } from "../dist/databases.js";
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const CLI = path.join(REPO, "dist", "index.js");
@@ -78,6 +83,9 @@ function parseArgs(argv) {
     if (!ALL_STACKS.includes(stack)) {
       throw new Error(`Unknown stack "${stack}". Choose from: ${ALL_STACKS.join(", ")}`);
     }
+  }
+  if (!DATABASES.includes(db)) {
+    throw new Error(`Unknown database "${db}". Choose from: ${DATABASES.join(", ")}`);
   }
   const frontends = Object.keys(FRONTEND_DETAILS);
   if (!frontends.includes(frontend)) {
@@ -234,6 +242,38 @@ async function smoke(stack, frontend, db, auth, keep) {
   const split = LAYOUT[stack] === "split";
   if (split) await writeEnv(project, ports, frontend);
 
+  // Everything the CLI printed rather than ran, in the order it printed it:
+  // starting the database in Docker, then pushing the schema into it. Running
+  // the CLI's own commands is what makes this a test of the instructions a
+  // developer is actually given.
+  const setup = isEngine(db)
+    ? planDatabaseLayers(stack, db).flatMap((layer) => layer.plan.manualStep ?? [])
+    : [];
+  // The container holds the engine's port, so the next stack in the run cannot
+  // start its own until this one is gone — on the way out of a failure as much
+  // as a success. Its volume goes too: a fresh database every run is the point.
+  const stopDatabase = async () => {
+    if (setup.length === 0) return;
+    await runToCompletion("docker", ["compose", "down", "-v"], {
+      cwd: project,
+      timeout: 120_000,
+    }).catch((error) => log(stack, `could not stop the database: ${error.message}`));
+  };
+
+  try {
+    for (const step of setup) {
+      log(stack, `running the step the CLI printed: ${step.command}`);
+      const [command, ...args] = step.command.split(" ");
+      await runToCompletion(command === "npm" ? NPM : command, args, {
+        cwd: project,
+        timeout: INSTALL_TIMEOUT_MS[stack],
+      });
+    }
+  } catch (error) {
+    await stopDatabase();
+    throw error;
+  }
+
   log(
     stack,
     split
@@ -349,6 +389,7 @@ async function smoke(stack, frontend, db, auth, keep) {
   } finally {
     stop(dev);
     await wait(500);
+    await stopDatabase();
     if (keep) {
       log(stack, `left in place: ${project}`);
     } else {

@@ -1,0 +1,33 @@
+# The database `npm run db:up` starts. Everything here matches the
+# DATABASE_URL already in your .env — same user, same password, same database
+# name, same port — so the two never have to be kept in step by hand.
+#
+# `npm run db:up` waits until the server is actually accepting connections,
+# and `npm run db:down` stops it while keeping your data in the named volume.
+# Point DATABASE_URL at a hosted database instead and you can ignore this file.
+
+services:
+  db:
+    image: mysql:8
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: __PROJECT_NAME__
+    ports:
+      - "3306:3306"
+    volumes:
+      - db-data:/var/lib/mysql
+    healthcheck:
+      # Over TCP, not the socket: MySQL's first-run setup answers on the socket
+      # long before it starts listening for the connections your app will make.
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -proot --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      # First-run setup creates the database before it starts listening, and
+      # on a cold machine that is most of the wait. Failures before this are
+      # not counted against the retries.
+      start_period: 30s
+
+volumes:
+  db-data:

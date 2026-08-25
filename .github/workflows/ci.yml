@@ -46,7 +46,8 @@ jobs:
           - { stack: typescript, frontend: svelte, db: none, auth: false }
           - { stack: typescript, frontend: vue, db: none, auth: false }
           # Both optional layers at once, on the database engine that needs no
-          # server running. Postgres and MySQL differ only in driver and URL.
+          # server running. Postgres and MySQL get their own job below, where
+          # there is a server to talk to.
           - { stack: typescript, frontend: next, db: sqlite, auth: true }
           - { stack: python, frontend: next, db: sqlite, auth: true }
           - { stack: springboot, frontend: next, db: sqlite, auth: true }
@@ -78,4 +79,51 @@ jobs:
           --frontend=${{ matrix.frontend }}
           --db=${{ matrix.db }}
           ${{ matrix.auth && '--auth' || '' }}
+        timeout-minutes: 25
+
+  database:
+    name: ${{ matrix.stack }} + ${{ matrix.db }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      # Postgres against every backend, since that is the engine the hosted
+      # options (Supabase, Neon, RDS) all speak. MySQL differs from it by a
+      # driver and a URL, so it rides on the two stacks whose drivers differ
+      # most — Prisma's and SQLAlchemy's.
+      matrix:
+        include:
+          - { stack: typescript, db: postgres }
+          - { stack: python, db: postgres }
+          - { stack: springboot, db: postgres }
+          - { stack: nextjs, db: postgres }
+          - { stack: typescript, db: mysql }
+          - { stack: python, db: mysql }
+    # No service containers: the database comes from the project's own compose
+    # file, started by the `npm run db:up` the CLI printed. What is under test
+    # is then the setup a developer is actually handed, rather than a second
+    # database stood up beside it with credentials CI invented.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-python@v5
+        if: matrix.stack == 'python'
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-java@v4
+        if: matrix.stack == 'springboot'
+        with:
+          distribution: temurin
+          java-version: "17"
+      - run: npm ci
+      - run: npm run build
+      # Scaffolds, starts the database with `npm run db:up`, pushes the schema,
+      # boots the app, and round-trips a row through POST then GET /api/items.
+      - name: Smoke test
+        run: >-
+          npm run smoke --
+          --stack=${{ matrix.stack }}
+          --db=${{ matrix.db }}
         timeout-minutes: 25
