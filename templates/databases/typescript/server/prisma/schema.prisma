@@ -15,7 +15,7 @@ datasource db {
 }
 
 model Item {
-  id        Int      @id @default(autoincrement())
+  id        __DB_ID__
   name      String
   createdAt DateTime @default(now())
 }

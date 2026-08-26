@@ -1,0 +1,18 @@
+db:
+  image: mysql:8
+  restart: unless-stopped
+  environment:
+    MYSQL_ROOT_PASSWORD: root
+    MYSQL_DATABASE: __PROJECT_NAME__
+  ports:
+    - "3306:3306"
+  volumes:
+    - db-data:/var/lib/mysql
+  healthcheck:
+    # Over TCP, not the socket: MySQL's first-run setup answers on the socket
+    # long before it starts listening for the connections your app will make.
+    test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -proot --silent"]
+    interval: 5s
+    timeout: 5s
+    retries: 20
+    start_period: 30s

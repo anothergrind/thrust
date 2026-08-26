@@ -11,10 +11,19 @@ import {
   DATABASE_LABELS,
   DATABASES,
   isEngine,
-  planDatabaseLayers,
+  databaseTemplate,
+  planDatabase,
   type Database,
 } from "./databases.js";
-import { applyLayer, type LayerPlan } from "./layers.js";
+import { assembleCompose, COMPOSE_SCRIPTS, composeStep } from "./compose.js";
+import {
+  bucketName,
+  planStorage,
+  STORAGE_LABELS,
+  STORAGES,
+  type Storage,
+} from "./storage.js";
+import { applyLayer, mergePackageJson, type LayerPlan } from "./layers.js";
 import { planAuth } from "./auth.js";
 import {
   buildNextSteps,
@@ -40,6 +49,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const PROJECT_NAME_SENTINEL = "__PROJECT_NAME__";
+/** The project name again, cleaned up until S3 will accept it as a bucket. */
+const BUCKET_NAME_SENTINEL = "__BUCKET_NAME__";
 const FRONTEND_LABEL_SENTINEL = "__FRONTEND_LABEL__";
 const CLIENT_API_ENV_SENTINEL = "__CLIENT_API_ENV__";
 
@@ -146,6 +157,7 @@ const FRONTENDS_DIR = path.join(TEMPLATES_DIR, "frontends");
 /** The all-in-one stack is a whole project, not a backend half. */
 const NEXTJS_DIR = path.join(TEMPLATES_DIR, "nextjs");
 const DATABASES_DIR = path.join(TEMPLATES_DIR, "databases");
+const STORAGE_DIR = path.join(TEMPLATES_DIR, "storage");
 const AUTH_DIR = path.join(TEMPLATES_DIR, "auth");
 
 async function directoriesIn(dir: string): Promise<Set<string>> {
@@ -192,6 +204,7 @@ async function scaffold(
   stack: Stack,
   frontend: Frontend,
   database: Database,
+  storage: Storage,
   withAuth: boolean
 ): Promise<ExtraSteps> {
   // Setup a database layer can only do once the dependencies are installed,
@@ -201,6 +214,7 @@ async function scaffold(
   const parts = [STACK_LABELS[stack]];
   if (stackTakesFrontend(stack)) parts.push(FRONTEND_LABELS[frontend]);
   if (isEngine(database)) parts.push(DATABASE_LABELS[database].split(" —")[0]);
+  if (storage !== "none") parts.push(STORAGE_LABELS[storage].split(" —")[0]);
   if (withAuth) parts.push("auth");
   spinner.start(`Copying ${parts.join(" + ")} template...`);
 
@@ -220,14 +234,19 @@ async function scaffold(
     // so it must be the folder name alone — never a path like "../my-app".
     [PROJECT_NAME_SENTINEL]: path.basename(destDir),
     [FRONTEND_LABEL_SENTINEL]: FRONTEND_DETAILS[frontend].label,
+    [BUCKET_NAME_SENTINEL]: bucketName(path.basename(destDir)),
     [CLIENT_API_ENV_SENTINEL]: FRONTEND_DETAILS[frontend].apiEnv,
   };
 
   const layers: { templateDir: string; plan: LayerPlan }[] = [];
   if (isEngine(database)) {
-    for (const layer of planDatabaseLayers(stack, database)) {
-      layers.push({ templateDir: path.join(DATABASES_DIR, layer.template), plan: layer.plan });
-    }
+    layers.push({
+      templateDir: path.join(DATABASES_DIR, databaseTemplate(stack, database)),
+      plan: planDatabase(stack, database),
+    });
+  }
+  if (storage !== "none") {
+    layers.push({ templateDir: path.join(STORAGE_DIR, stack), plan: planStorage(stack) });
   }
   if (withAuth) {
     layers.push({ templateDir: path.join(AUTH_DIR, stack), plan: planAuth(stack) });
@@ -239,6 +258,16 @@ async function scaffold(
     Object.assign(replacements, layer.plan.replacements);
     if (layer.plan.installStep) extra.install.push(layer.plan.installStep);
     if (layer.plan.manualStep) extra.manual.push(layer.plan.manualStep);
+  }
+
+  // One compose file for the whole project, however many layers wanted a
+  // service in it, and one pair of scripts to drive it. Starting it comes
+  // first: every other step assumes the thing it talks to is already up.
+  const services = layers.flatMap((layer) => layer.plan.compose ?? []);
+  if (services.length > 0) {
+    await assembleCompose(TEMPLATES_DIR, destDir, services);
+    await mergePackageJson(path.join(destDir, "package.json"), { scripts: COMPOSE_SCRIPTS });
+    extra.manual.unshift(composeStep(services));
   }
 
   await replaceInDir(destDir, replacements);
@@ -410,6 +439,20 @@ async function selectDatabase(): Promise<Database> {
   return database as Database;
 }
 
+async function selectStorage(): Promise<Storage> {
+  const storage = await p.select({
+    message: "Add file storage?",
+    options: STORAGES.map((s) => ({ value: s, label: STORAGE_LABELS[s] })),
+  });
+
+  if (p.isCancel(storage)) {
+    p.cancel("Cancelled.");
+    process.exit(0);
+  }
+
+  return storage as Storage;
+}
+
 /** Asked last, because it is the one choice that changes nothing else. */
 async function confirmAuth(): Promise<boolean> {
   const wanted = await p.confirm({
@@ -443,6 +486,10 @@ async function main(): Promise<void> {
       "--db <database>",
       `Database layer: ${DATABASES.join(", ")} (default: none)`
     )
+    .option(
+      "--storage <storage>",
+      `File storage layer: ${STORAGES.join(", ")} (default: none)`
+    )
     .option("--no-install", "Skip dependency installation")
     .option("--no-git", "Skip git repository initialization")
     .option("--github", "Create a GitHub repository and push (requires gh)")
@@ -454,6 +501,7 @@ async function main(): Promise<void> {
     stack?: string;
     frontend?: string;
     db?: string;
+    storage?: string;
     auth?: boolean;
     install: boolean;
     git: boolean;
@@ -478,6 +526,7 @@ async function main(): Promise<void> {
   let stack: Stack;
   let frontend: Frontend = "next";
   let database: Database = "none";
+  let storage: Storage = "none";
   let withAuth = false;
 
   if (isNonInteractive) {
@@ -533,6 +582,16 @@ async function main(): Promise<void> {
       database = opts.db as Database;
     }
 
+    if (opts.storage !== undefined) {
+      if (!STORAGES.includes(opts.storage as Storage)) {
+        console.error(
+          `Unknown storage "${opts.storage}". Choose from: ${STORAGES.join(", ")}`
+        );
+        process.exit(1);
+      }
+      storage = opts.storage as Storage;
+    }
+
     withAuth = opts.auth === true;
   } else {
     // The prompts need a real terminal. Without this the first prompt throws
@@ -565,6 +624,7 @@ async function main(): Promise<void> {
     }
 
     database = await selectDatabase();
+    storage = await selectStorage();
     withAuth = opts.auth === true || (await confirmAuth());
   }
 
@@ -604,7 +664,15 @@ async function main(): Promise<void> {
     }
   }
 
-  const extraSteps = await scaffold(target, destDir, stack, frontend, database, withAuth);
+  const extraSteps = await scaffold(
+    target,
+    destDir,
+    stack,
+    frontend,
+    database,
+    storage,
+    withAuth
+  );
 
   let installed = false;
 

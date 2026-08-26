@@ -38,7 +38,11 @@ thrust/
     │   ├── next/           Next.js (React)
     │   ├── svelte/         SvelteKit
     │   └── vue/            Vue 3 + Vite
-    ├── databases/      The opt-in data layer, one fragment per stack
+    ├── compose/        The docker-compose.yml skeleton, and one fragment
+    │                   per service that can go in it
+    ├── databases/      The opt-in data layer, one fragment per stack, plus
+    │                   mongodb/ for the two stacks whose client changes
+    ├── storage/        The opt-in S3 layer, one implementation per stack
     ├── auth/           The opt-in auth stub, one implementation per stack
     └── nextjs/         The all-in-one stack: a whole project, not a half
 ```
@@ -108,9 +112,12 @@ by a `LayerPlan` (`src/layers.ts`) — dependencies to merge into a manifest,
 lines to append to `requirements.txt`, Maven dependencies, Spring properties,
 environment variables, and the import and route lines for the backend's entry
 point. `planDatabase` in `src/databases.ts` and `planAuth` in `src/auth.ts`
-build those plans; `applyLayer` carries them out. Adding a database engine
-usually means adding a row to the `PRISMA`, `SQLALCHEMY` and `JDBC` tables
-rather than writing new code.
+build those plans; `applyLayer` carries them out. Adding a SQL engine usually
+means adding a row to the `PRISMA`, `SQLALCHEMY` and `JDBC` tables rather than
+writing new code. MongoDB is the exception that shows where that ends: Prisma
+reaches it with the same client API and needs one line of schema changed, while
+SQLAlchemy and JPA cannot reach it at all, so those two stacks have a second
+set of templates under `templates/databases/mongodb`.
 
 A layer that needs a secret should generate it per project, put the real value
 in `.env` and a placeholder in `.env.example` (`envExample` on the plan). No
@@ -151,13 +158,21 @@ server, and `templates/databases/<stack>` carries the code that talks to it.
 the smoke script reads too — so "start the database, then push the schema" has
 one definition rather than one per caller.
 
-CI boots SQLite in the `generate` job and Postgres and MySQL in the `database`
-job. Neither uses service containers: the smoke script runs the project's own
-`npm run db:up`, so the compose file a developer is handed is the one under
-test. Locally it is the same command, and it needs Docker:
+A project can want more than one service — a database and an object store —
+and only one `docker-compose.yml`, so that file is assembled rather than
+copied: `templates/compose/docker-compose.yml` carries a marker per section,
+and each layer names a fragment in `templates/compose/services` to insert. The
+fragments are written flush left, since `insertAtMarker` adds the marker's own
+indentation to every line it inserts.
+
+CI boots SQLite in the `generate` job, and Postgres, MySQL, MongoDB and MinIO
+in the `services` job. Neither uses service containers: the smoke script runs
+the project's own `npm run docker:up`, so the compose file a developer is
+handed is the one under test. Locally it is the same command, and it needs
+Docker:
 
 ```bash
-npm run smoke -- --stack=typescript --db=postgres
+npm run smoke -- --stack=typescript --db=mongodb --storage=s3
 ```
 
 After a template change, `npm run release:check` shows what would actually

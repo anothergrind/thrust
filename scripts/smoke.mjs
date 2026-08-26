@@ -16,6 +16,7 @@
  *   node scripts/smoke.mjs --db=postgres      needs a server on the scaffolded
  *                                             URL, with a database named after
  *                                             the project ("<stack>-app")
+ *   node scripts/smoke.mjs --storage=s3       with the file storage layer
  *   node scripts/smoke.mjs --auth             with the auth stub
  *   node scripts/smoke.mjs --keep             leave the generated project behind
  */
@@ -29,7 +30,9 @@ import { fileURLToPath } from "node:url";
 // which environment variable each frontend reads its API URL from, and which
 // setup step a database layer leaves for the developer to run.
 import { FRONTEND_DETAILS, stackTakesFrontend } from "../dist/stacks.js";
-import { DATABASES, isEngine, planDatabaseLayers } from "../dist/databases.js";
+import { DATABASES, isEngine, planDatabase } from "../dist/databases.js";
+import { planStorage, STORAGES } from "../dist/storage.js";
+import { composeStep } from "../dist/compose.js";
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const CLI = path.join(REPO, "dist", "index.js");
@@ -69,6 +72,7 @@ function parseArgs(argv) {
   const stacks = [];
   let frontend = "next";
   let db = "none";
+  let storage = "none";
   let auth = false;
   let keep = false;
   for (const arg of argv) {
@@ -76,6 +80,7 @@ function parseArgs(argv) {
     else if (arg.startsWith("--stack=")) stacks.push(arg.slice("--stack=".length));
     else if (arg.startsWith("--frontend=")) frontend = arg.slice("--frontend=".length);
     else if (arg.startsWith("--db=")) db = arg.slice("--db=".length);
+    else if (arg.startsWith("--storage=")) storage = arg.slice("--storage=".length);
     else if (arg === "--auth") auth = true;
     else throw new Error(`Unknown argument: ${arg}`);
   }
@@ -87,11 +92,14 @@ function parseArgs(argv) {
   if (!DATABASES.includes(db)) {
     throw new Error(`Unknown database "${db}". Choose from: ${DATABASES.join(", ")}`);
   }
+  if (!STORAGES.includes(storage)) {
+    throw new Error(`Unknown storage "${storage}". Choose from: ${STORAGES.join(", ")}`);
+  }
   const frontends = Object.keys(FRONTEND_DETAILS);
   if (!frontends.includes(frontend)) {
     throw new Error(`Unknown frontend "${frontend}". Choose from: ${frontends.join(", ")}`);
   }
-  return { stacks: stacks.length ? stacks : ALL_STACKS, frontend, db, auth, keep };
+  return { stacks: stacks.length ? stacks : ALL_STACKS, frontend, db, storage, auth, keep };
 }
 
 function log(stack, message) {
@@ -222,7 +230,7 @@ function assertEqual(actual, expected, what) {
   if (a !== b) throw new Error(`${what}: expected ${b}, got ${a}`);
 }
 
-async function smoke(stack, frontend, db, auth, keep) {
+async function smoke(stack, frontend, db, storage, auth, keep) {
   const workspace = await fs.mkdtemp(path.join(os.tmpdir(), `thrust-smoke-${stack}-`));
   const project = path.join(workspace, `${stack}-app`);
   const ports = portsFor(stack);
@@ -231,6 +239,7 @@ async function smoke(stack, frontend, db, auth, keep) {
   const args = [CLI, project, `--stack=${stack}`, "--no-git"];
   if (usesFrontend) args.push(`--frontend=${frontend}`);
   if (db !== "none") args.push(`--db=${db}`);
+  if (storage !== "none") args.push(`--storage=${storage}`);
   if (auth) args.push("--auth");
 
   log(stack, `scaffolding ${usesFrontend ? `with ${frontend} ` : ""}into ${project}`);
@@ -246,18 +255,26 @@ async function smoke(stack, frontend, db, auth, keep) {
   // starting the database in Docker, then pushing the schema into it. Running
   // the CLI's own commands is what makes this a test of the instructions a
   // developer is actually given.
-  const setup = isEngine(db)
-    ? planDatabaseLayers(stack, db).flatMap((layer) => layer.plan.manualStep ?? [])
-    : [];
-  // The container holds the engine's port, so the next stack in the run cannot
-  // start its own until this one is gone — on the way out of a failure as much
-  // as a success. Its volume goes too: a fresh database every run is the point.
-  const stopDatabase = async () => {
+  // The same list the CLI builds, from the same functions: the services that
+  // have to be up, then whatever each layer still needs done to them.
+  const plans = [
+    isEngine(db) ? planDatabase(stack, db) : undefined,
+    storage !== "none" ? planStorage(stack) : undefined,
+  ].filter(Boolean);
+  const services = plans.flatMap((plan) => plan.compose ?? []);
+  const setup = [
+    ...(services.length > 0 ? [composeStep(services)] : []),
+    ...plans.flatMap((plan) => plan.manualStep ?? []),
+  ];
+  // The containers hold their ports, so the next stack in the run cannot start
+  // its own until these are gone — on the way out of a failure as much as a
+  // success. The volumes go too: a fresh database every run is the point.
+  const stopServices = async () => {
     if (setup.length === 0) return;
     await runToCompletion("docker", ["compose", "down", "-v"], {
       cwd: project,
       timeout: 120_000,
-    }).catch((error) => log(stack, `could not stop the database: ${error.message}`));
+    }).catch((error) => log(stack, `could not stop the services: ${error.message}`));
   };
 
   try {
@@ -270,7 +287,7 @@ async function smoke(stack, frontend, db, auth, keep) {
       });
     }
   } catch (error) {
-    await stopDatabase();
+    await stopServices();
     throw error;
   }
 
@@ -352,6 +369,38 @@ async function smoke(stack, frontend, db, auth, keep) {
       log(stack, `${db}: POST then GET /api/items round-tripped a row`);
     }
 
+    // With a storage layer there is a bucket to put something in, and the
+    // round trip proves the client, the credentials and the signed URL all
+    // landed: the download follows the redirect to the store itself.
+    if (storage !== "none") {
+      const filesBase = `http://localhost:${ports.server}/api/files`;
+      const contents = `smoke test ${Date.now()}`;
+      const form = new FormData();
+      form.append("file", new Blob([contents], { type: "text/plain" }), "smoke.txt");
+
+      const uploaded = await fetch(filesBase, {
+        method: "POST",
+        body: form,
+        signal: AbortSignal.timeout(30_000),
+      });
+      if (uploaded.status !== 201) {
+        throw new Error(`${stack}: POST /api/files answered ${uploaded.status}`);
+      }
+      const { key } = await uploaded.json();
+
+      const listed = await (await get(filesBase)).json();
+      if (!listed.some((file) => file.key === key)) {
+        throw new Error(`${stack}: the file just uploaded isn't in GET /api/files`);
+      }
+
+      const downloaded = await get(`${filesBase}/${encodeURIComponent(key)}`);
+      const body = await downloaded.text();
+      if (body !== contents) {
+        throw new Error(`${stack}: the signed URL gave back ${JSON.stringify(body)}`);
+      }
+      log(stack, `${storage}: uploaded a file, listed it, and read it back`);
+    }
+
     // The auth stub is the same three endpoints on every stack, so one signup
     // and one call to a protected route covers all of them.
     if (auth) {
@@ -389,7 +438,7 @@ async function smoke(stack, frontend, db, auth, keep) {
   } finally {
     stop(dev);
     await wait(500);
-    await stopDatabase();
+    await stopServices();
     if (keep) {
       log(stack, `left in place: ${project}`);
     } else {
@@ -398,14 +447,16 @@ async function smoke(stack, frontend, db, auth, keep) {
   }
 }
 
-const { stacks, frontend, db, auth, keep } = parseArgs(process.argv.slice(2));
+const { stacks, frontend, db, storage, auth, keep } = parseArgs(process.argv.slice(2));
 
 for (const stack of stacks) {
-  await smoke(stack, frontend, db, auth, keep);
+  await smoke(stack, frontend, db, storage, auth, keep);
   log(stack, "ok");
 }
 
-const suffix = `${db === "none" ? "" : `+${db}`}${auth ? "+auth" : ""}`;
+const suffix =
+  `${db === "none" ? "" : `+${db}`}` +
+  `${storage === "none" ? "" : `+${storage}`}${auth ? "+auth" : ""}`;
 console.log(
   `Smoke tests passed: ${stacks.map((s) => `${s}+${frontend}${suffix}`).join(", ")}`
 );

@@ -57,6 +57,12 @@ Sleep 700ms
 Enter
 Sleep 1500ms
 
+# File storage: leave it on None. The recording is about the shape of the
+# questions, and one picker already showed that.
+Sleep 700ms
+Enter
+Sleep 1500ms
+
 # "Add an auth stub?" — Yes. The default is No, so toggle first.
 Left
 Sleep 600ms

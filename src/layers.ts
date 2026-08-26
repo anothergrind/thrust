@@ -23,18 +23,13 @@ export type LayerPlan = {
   /** What .env.example should show instead, where a real value is a secret. */
   envExample?: Record<string, string>;
   /** package.json fields to merge into the server's (or the app's) manifest. */
-  packageJson?: {
-    path: string;
-    dependencies?: Record<string, string>;
-    devDependencies?: Record<string, string>;
-    scripts?: Record<string, string>;
-  };
+  packageJson?: PackageAdditions & { path: string };
   /** Lines appended to a requirements.txt. */
   requirements?: { path: string; lines: string[] };
   /** Maven dependencies inserted at the pom's marker. */
   maven?: { path: string; dependencies: MavenDependency[] };
-  /** Lines appended to a Spring properties file. */
-  properties?: { path: string; entries: Record<string, string> };
+  /** Lines appended to a Spring properties file, under their own heading. */
+  properties?: { path: string; heading: string; entries: Record<string, string> };
   /** Import and route registration lines for the backend's entry point. */
   wiring?: { path: string; imports: string[]; routes: string[] };
   /** Extra .gitignore entries, e.g. a SQLite file. */
@@ -45,6 +40,8 @@ export type LayerPlan = {
    * team, and that same person on Monday, will look for them.
    */
   readme?: { path: string; lines: string[] };
+  /** A service this layer needs running: a database, an object store. */
+  compose?: ComposeService;
   /** Appended to the root install command, for setup that can run offline. */
   installStep?: string;
   /**
@@ -55,7 +52,30 @@ export type LayerPlan = {
   manualStep?: { command: string; reason: string };
 };
 
-export type MavenDependency = { groupId: string; artifactId: string; scope?: string };
+/** `version` is only needed outside Spring Boot's own dependency management. */
+/** What a layer adds to a package.json, wherever that manifest happens to be. */
+export type PackageAdditions = {
+  dependencies?: Record<string, string>;
+  devDependencies?: Record<string, string>;
+  scripts?: Record<string, string>;
+};
+
+export type MavenDependency = {
+  groupId: string;
+  artifactId: string;
+  version?: string;
+  scope?: string;
+};
+
+/** A service a layer adds to the project's docker-compose.yml. */
+export type ComposeService = {
+  /** Which fragment in templates/compose/services, without the extension. */
+  fragment: string;
+  /** What to call it in the step the CLI prints. */
+  label: string;
+  /** The named volume it keeps its data in, if it keeps any. */
+  volume?: string;
+};
 
 export async function applyLayer(
   destDir: string,
@@ -74,7 +94,11 @@ export async function applyLayer(
     await insertMavenDependencies(path.join(destDir, plan.maven.path), plan.maven.dependencies);
   }
   if (plan.properties) {
-    await appendProperties(path.join(destDir, plan.properties.path), plan.properties.entries);
+    await appendProperties(
+      path.join(destDir, plan.properties.path),
+      plan.properties.heading,
+      plan.properties.entries
+    );
   }
   if (plan.wiring) {
     const entryPoint = path.join(destDir, plan.wiring.path);
@@ -93,9 +117,9 @@ export async function applyLayer(
  * Merges dependencies and scripts into an existing manifest, keeping the key
  * order npm itself writes so the diff stays readable.
  */
-async function mergePackageJson(
+export async function mergePackageJson(
   manifestPath: string,
-  additions: NonNullable<LayerPlan["packageJson"]>
+  additions: PackageAdditions
 ): Promise<void> {
   const manifest = JSON.parse(await fs.readFile(manifestPath, "utf-8"));
 
@@ -120,9 +144,10 @@ async function appendLines(filePath: string, lines: string[]): Promise<void> {
 
 async function appendProperties(
   filePath: string,
+  heading: string,
   entries: Record<string, string>
 ): Promise<void> {
-  const lines = ["", "# Database"];
+  const lines = ["", heading];
   for (const [key, value] of Object.entries(entries)) {
     lines.push(`${key}=${value}`);
   }
@@ -140,6 +165,7 @@ async function insertMavenDependencies(
       "<dependency>",
       `    <groupId>${dependency.groupId}</groupId>`,
       `    <artifactId>${dependency.artifactId}</artifactId>`,
+      ...(dependency.version ? [`    <version>${dependency.version}</version>`] : []),
       ...(dependency.scope ? [`    <scope>${dependency.scope}</scope>`] : []),
       "</dependency>",
       ""

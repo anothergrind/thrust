@@ -1,0 +1,19 @@
+db:
+  image: postgres:16
+  restart: unless-stopped
+  environment:
+    POSTGRES_USER: postgres
+    POSTGRES_PASSWORD: postgres
+    POSTGRES_DB: __PROJECT_NAME__
+  ports:
+    - "5432:5432"
+  volumes:
+    - db-data:/var/lib/postgresql/data
+  healthcheck:
+    # Over TCP, not the socket: during its first-run setup Postgres answers on
+    # the socket while still refusing the connections your app will make.
+    test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U postgres -d __PROJECT_NAME__"]
+    interval: 5s
+    timeout: 5s
+    retries: 20
+    start_period: 30s

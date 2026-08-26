@@ -1,0 +1,14 @@
+# The services `npm run docker:up` starts. Everything here matches what your
+# .env already points at — same credentials, same ports, same names — so the
+# two never have to be kept in step by hand.
+#
+# `npm run docker:up` waits until they are accepting connections, and
+# `npm run docker:down` stops them while keeping your data in the volumes
+# below. Point .env at hosted services instead and this is a file you never
+# have to open.
+
+services:
+  # thrust:services
+
+volumes:
+  # thrust:volumes

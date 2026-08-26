@@ -330,8 +330,8 @@ test("a server-backed engine arrives with a database the project can start", asy
     );
 
     const manifest = JSON.parse(await read(project, "package.json"));
-    assert.equal(manifest.scripts["db:up"], "docker compose up -d --wait");
-    assert.equal(manifest.scripts["db:down"], "docker compose down");
+    assert.equal(manifest.scripts["docker:up"], "docker compose up -d --wait");
+    assert.equal(manifest.scripts["docker:down"], "docker compose down");
 
     await fs.rm(workspace, { recursive: true, force: true });
   }
@@ -346,7 +346,7 @@ test("a file-backed engine has nothing to start, and brings nothing", async () =
       `${args.join(" ")} should have no database server to run`
     );
     const manifest = JSON.parse(await read(project, "package.json"));
-    assert.ok(!manifest.scripts["db:up"]);
+    assert.ok(!manifest.scripts["docker:up"]);
 
     await fs.rm(workspace, { recursive: true, force: true });
   }
@@ -355,7 +355,7 @@ test("a file-backed engine has nothing to start, and brings nothing", async () =
 test("the database is started before the schema is pushed into it", async () => {
   const { workspace, output } = await scaffold(["--stack=typescript", "--db=postgres"]);
 
-  const up = output.indexOf("npm run db:up");
+  const up = output.indexOf("npm run docker:up");
   const push = output.indexOf("npm run db:push");
   assert.ok(up !== -1 && push !== -1, "both steps should be printed");
   assert.ok(up < push, "pushing a schema into a database that isn't up yet fails");
@@ -372,9 +372,9 @@ test("the project's README explains the database it was given", async () => {
 
   const readme = await read(project, "README.md");
   assert.match(readme, /## Database/);
-  assert.match(readme, /npm run db:up\s+# start Postgres in Docker/);
+  assert.match(readme, /npm run docker:up\s+# start Postgres in Docker/);
   assert.match(readme, /npm run db:push --prefix server\s+# create or update the tables/);
-  assert.match(readme, /npm run db:down/);
+  assert.match(readme, /npm run docker:down/);
   assert.match(readme, /`DATABASE_URL` in `server\/\.env`/);
   // The template's own sections are still there.
   assert.match(readme, /## Project structure/);
@@ -388,6 +388,95 @@ test("and says nothing about one when there isn't one", async () => {
   const readme = await read(project, "README.md");
   assert.ok(!readme.includes("## Database"));
   assert.ok(!readme.includes("DATABASE_URL"));
+
+  await fs.rm(workspace, { recursive: true, force: true });
+});
+
+/**
+ * Prisma speaks MongoDB with the client API it uses for SQL, so those two
+ * stacks change one line of schema and nothing else. Everything that makes it
+ * a document database is in that line.
+ */
+test("MongoDB is still Prisma where Prisma can reach it", async () => {
+  for (const [args, schema] of [
+    [["--stack=typescript", "--db=mongodb"], "server/prisma/schema.prisma"],
+    [["--stack=nextjs", "--db=mongodb"], "prisma/schema.prisma"],
+  ]) {
+    const { workspace, project } = await scaffold(args);
+
+    const model = await read(project, schema);
+    assert.match(model, /provider = "mongodb"/);
+    assert.match(model, /id\s+String\s+@id @default\(auto\(\)\) @map\("_id"\) @db.ObjectId/);
+    assert.ok(!model.includes("autoincrement"), "an ObjectId is not a counter");
+
+    const envFile = args[0] === "--stack=nextjs" ? ".env" : "server/.env";
+    assert.match(await read(project, envFile), /DATABASE_URL="mongodb:\/\/localhost:27017\/my-app"/);
+
+    await fs.rm(workspace, { recursive: true, force: true });
+  }
+});
+
+test("and its own client where Prisma isn't the ORM", async () => {
+  const { workspace, project } = await scaffold(["--stack=python", "--db=mongodb"]);
+
+  const requirements = await read(project, "server/requirements.txt");
+  assert.match(requirements, /pymongo/);
+  assert.ok(!requirements.includes("sqlalchemy"), "SQLAlchemy cannot speak Mongo");
+
+  assert.match(await read(project, "server/db.py"), /MongoClient/);
+  await assert.rejects(fs.access(path.join(project, "server", "models.py")));
+
+  const entry = await read(project, "server/main.py");
+  assert.match(entry, /from db import create_indexes/);
+  assert.match(entry, /create_indexes\(\)/);
+
+  await fs.rm(workspace, { recursive: true, force: true });
+});
+
+test("Spring Data swaps JPA for MongoDB, and the DataSource with it", async () => {
+  const { workspace, project } = await scaffold(["--stack=springboot", "--db=mongodb"]);
+
+  const pom = await read(project, "server/pom.xml");
+  assert.match(pom, /spring-boot-starter-data-mongodb/);
+  assert.ok(!pom.includes("data-jpa"), "JPA would demand a DataSource that isn't there");
+
+  const properties = await read(project, "server/src/main/resources/application.properties");
+  assert.match(properties, /spring.data.mongodb.uri=\$\{DATABASE_URL:mongodb:/);
+  assert.ok(!properties.includes("spring.datasource"), "there is no JDBC connection to make");
+
+  const item = await read(project, "server/src/main/java/com/example/app/Item.java");
+  assert.match(item, /@Document\(collection = "items"\)/);
+  assert.match(item, /private String id;/);
+  assert.match(
+    await read(project, "server/src/main/java/com/example/app/ItemRepository.java"),
+    /MongoRepository<Item, String>/
+  );
+
+  await fs.rm(workspace, { recursive: true, force: true });
+});
+
+test("MongoDB's compose service is a replica set, because Prisma needs one", async () => {
+  const { workspace, project } = await scaffold(["--stack=typescript", "--db=mongodb"]);
+
+  const compose = await read(project, "docker-compose.yml");
+  assert.match(compose, /image: mongo:7/);
+  assert.match(compose, /--replSet/);
+  // The app connects from outside Docker, so the set has to advertise a host
+  // the app can reach rather than the container's own name.
+  assert.match(compose, /localhost:27017/);
+  assert.match(compose, /"27017:27017"/);
+
+  await fs.rm(workspace, { recursive: true, force: true });
+});
+
+test("a document database is described in the words it uses", async () => {
+  const { workspace, project, output } = await scaffold(["--stack=python", "--db=mongodb"]);
+
+  const readme = await read(project, "README.md");
+  assert.match(readme, /MongoDB, through PyMongo/);
+  assert.match(readme, /collections are created on startup/i);
+  assert.ok(!readme.includes("tables"), "Mongo has none");
+  assert.match(output, /npm run docker:up\s+# starts MongoDB in Docker/);
 
   await fs.rm(workspace, { recursive: true, force: true });
 });

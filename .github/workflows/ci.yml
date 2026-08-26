@@ -81,8 +81,8 @@ jobs:
           ${{ matrix.auth && '--auth' || '' }}
         timeout-minutes: 25
 
-  database:
-    name: ${{ matrix.stack }} + ${{ matrix.db }}
+  services:
+    name: ${{ matrix.stack }} + ${{ matrix.db }} + ${{ matrix.storage }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -90,18 +90,28 @@ jobs:
       # options (Supabase, Neon, RDS) all speak. MySQL differs from it by a
       # driver and a URL, so it rides on the two stacks whose drivers differ
       # most — Prisma's and SQLAlchemy's.
+      #
+      # MongoDB is a different data layer on every stack rather than a driver
+      # swap, so it gets all four; S3 rides along with it, which also puts two
+      # services in one compose file. The last row is storage on its own.
       matrix:
         include:
-          - { stack: typescript, db: postgres }
-          - { stack: python, db: postgres }
-          - { stack: springboot, db: postgres }
-          - { stack: nextjs, db: postgres }
-          - { stack: typescript, db: mysql }
-          - { stack: python, db: mysql }
-    # No service containers: the database comes from the project's own compose
-    # file, started by the `npm run db:up` the CLI printed. What is under test
-    # is then the setup a developer is actually handed, rather than a second
-    # database stood up beside it with credentials CI invented.
+          - { stack: typescript, db: postgres, storage: none }
+          - { stack: python, db: postgres, storage: none }
+          - { stack: springboot, db: postgres, storage: none }
+          - { stack: nextjs, db: postgres, storage: none }
+          - { stack: typescript, db: mysql, storage: none }
+          - { stack: python, db: mysql, storage: none }
+          - { stack: typescript, db: mongodb, storage: s3 }
+          - { stack: python, db: mongodb, storage: s3 }
+          - { stack: springboot, db: mongodb, storage: s3 }
+          - { stack: nextjs, db: mongodb, storage: s3 }
+          - { stack: typescript, db: none, storage: s3 }
+    # No service containers: the database and the object store both come from
+    # the project's own compose file, started by the `npm run docker:up` the
+    # CLI printed. What is under test is then the setup a developer is actually
+    # handed, rather than services stood up beside it with credentials CI
+    # invented.
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -119,11 +129,13 @@ jobs:
           java-version: "17"
       - run: npm ci
       - run: npm run build
-      # Scaffolds, starts the database with `npm run db:up`, pushes the schema,
-      # boots the app, and round-trips a row through POST then GET /api/items.
+      # Scaffolds, starts the services with `npm run docker:up`, pushes the
+      # schema, boots the app, and round-trips a row through /api/items and a
+      # file through /api/files.
       - name: Smoke test
         run: >-
           npm run smoke --
           --stack=${{ matrix.stack }}
           --db=${{ matrix.db }}
+          --storage=${{ matrix.storage }}
         timeout-minutes: 25

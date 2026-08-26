@@ -59,6 +59,7 @@ export function planAuth(stack: Stack): LayerPlan {
         envExample,
         properties: {
           path: "server/src/main/resources/application.properties",
+          heading: "# Auth",
           entries: { "app.auth-secret": "${AUTH_SECRET:" + SECRET_PLACEHOLDER + "}" },
         },
       };

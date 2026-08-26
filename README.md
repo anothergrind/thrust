@@ -24,8 +24,10 @@ A ready-to-run project with:
   frontend fetching it on load, and `.env` files with matching variable names
 - **One command** (`npm run dev`) starts frontend and backend together
 - **Optional database layer** (`--db`) with a model, a client, a worked
-  `/api/items` endpoint, and — for Postgres and MySQL — the server itself,
-  one `npm run db:up` away
+  `/api/items` endpoint, and — for Postgres, MySQL and MongoDB — the server
+  itself, one `npm run docker:up` away
+- **Optional file storage** (`--storage=s3`) — upload, list and download
+  endpoints against an S3 bucket, with MinIO for local work
 - **Optional auth stub** (`--auth`) — signup, login and a protected route,
   the same three endpoints whichever backend you picked
 
@@ -211,16 +213,20 @@ Stack-specific notes:
 
 ## Database
 
-Optional, and off unless you ask for it. `--db=sqlite` (or `postgres`, or
-`mysql`) adds a real data layer to whichever stack you picked, using the ORM
-that stack's ecosystem already expects:
+Optional, and off unless you ask for it. `--db=sqlite` (or `postgres`, `mysql`,
+or `mongodb`) adds a real data layer to whichever stack you picked, using the
+library that stack's ecosystem already expects:
 
-| Stack        | Layer               | You get                                  |
-| ------------ | ------------------- | ---------------------------------------- |
-| `typescript` | Prisma              | `schema.prisma`, a client, `items.ts`    |
-| `nextjs`     | Prisma              | `schema.prisma`, `lib/db.ts`, a route    |
-| `python`     | SQLAlchemy          | `db.py`, `models.py`, `items.py`         |
-| `springboot` | Spring Data JPA     | `Item`, `ItemRepository`, a controller   |
+| Stack        | SQL engines     | `mongodb`            | You get                               |
+| ------------ | --------------- | -------------------- | ------------------------------------- |
+| `typescript` | Prisma          | Prisma               | `schema.prisma`, a client, `items.ts` |
+| `nextjs`     | Prisma          | Prisma               | `schema.prisma`, `lib/db.ts`, a route |
+| `python`     | SQLAlchemy      | PyMongo              | `db.py`, `items.py`                   |
+| `springboot` | Spring Data JPA | Spring Data MongoDB  | `Item`, `ItemRepository`, a controller |
+
+Prisma speaks MongoDB with the same client API it uses for SQL, so those two
+stacks change one line of schema and nothing else. SQLAlchemy and JPA don't, so
+Python and Spring Boot get a document client instead of an ORM.
 
 Each one lands with the same worked example — `GET /api/items` and
 `POST /api/items` against an `Item` model — so there is something to copy
@@ -228,7 +234,8 @@ rather than a blank ORM to configure. Delete it once you have your own models.
 
 The connection string is always `DATABASE_URL` in `server/.env`, whichever
 stack and engine you chose. `postgres` is also how you reach Supabase, Neon or
-RDS: keep the layer and point `DATABASE_URL` at their connection string.
+RDS, and `mongodb` is how you reach Atlas: keep the layer and point
+`DATABASE_URL` at their connection string.
 
 ```bash
 npm create thrust@latest my-app -- --stack=typescript --db=sqlite
@@ -237,14 +244,14 @@ npm create thrust@latest my-app -- --stack=typescript --db=sqlite
 SQLite needs nothing installed — the file is created during `npm install`, and
 `npm run dev` works immediately.
 
-`postgres` and `mysql` bring the server too, so choosing one isn't a homework
-assignment. The project gets a `docker-compose.yml` describing the very
+`postgres`, `mysql` and `mongodb` bring the server too, so choosing one isn't a
+homework assignment. The project gets a `docker-compose.yml` describing the very
 database its `DATABASE_URL` points at — same user, same password, same name —
 and two scripts to drive it:
 
 ```bash
-npm run db:up      # starts it, and waits until it accepts connections
-npm run db:down    # stops it, keeping your data
+npm run docker:up      # starts it, and waits until it accepts connections
+npm run docker:down    # stops it, keeping your data
 ```
 
 Docker is what that needs, and it is the only thing that needs it. Point
@@ -256,10 +263,35 @@ compose file is just a file you never open. On `springboot` that URL keeps its
 Whether anything else has to happen before `npm run dev` depends on the ORM,
 and the CLI prints the step when there is one:
 
-| Stack                   | Before the first run                                    |
-| ----------------------- | ------------------------------------------------------- |
-| `typescript` / `nextjs` | `npm run db:push` — Prisma creates the tables on request |
-| `python` / `springboot` | nothing — SQLAlchemy and Hibernate create them on start  |
+| Stack                   | Before the first run                                     |
+| ----------------------- | -------------------------------------------------------- |
+| `typescript` / `nextjs` | `npm run db:push` — Prisma creates the tables on request  |
+| `python` / `springboot` | nothing — the tables and collections appear on first use  |
+
+## File storage
+
+`--storage=s3` adds somewhere to put the files your users upload, which is not
+a job for a database column. The same three endpoints land on every stack:
+
+| Endpoint              | What it does                                |
+| --------------------- | ------------------------------------------- |
+| `POST /api/files`     | Uploads one file, form field `file`         |
+| `GET /api/files`      | Lists what is in the bucket                 |
+| `GET /api/files/:key` | Redirects to a signed URL, good for an hour |
+
+S3 here means the protocol rather than the vendor: MinIO runs it in the
+project's own compose file, and Cloudflare R2, DigitalOcean Spaces and S3
+itself are the same code with a different `S3_ENDPOINT` — empty it and the SDK
+talks to AWS. The bucket is named by `S3_BUCKET` and created on startup if it
+isn't there yet, the way the ORMs create their tables.
+
+```bash
+npm create thrust@latest my-app -- --stack=typescript --db=postgres --storage=s3
+npm run docker:up   # one compose file, both services
+```
+
+Uploads are held in memory on the way through, which is fine up to the 25 MB
+limit the layer sets and is not how you would stream a video.
 
 ## Auth stub
 
